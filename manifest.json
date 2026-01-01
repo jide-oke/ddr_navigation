@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "DDR Receptors Overlay (Cmd+Option+D)",
+  "version": "1.0.1",
+  "description": "Hold Cmd+Option+D to show DDR receptor arrows in the top-right corner.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
