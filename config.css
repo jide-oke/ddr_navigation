@@ -1,0 +1,66 @@
+body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  margin: 16px;
+}
+
+h1 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.sub {
+  margin: 0 0 14px;
+  opacity: 0.8;
+  font-size: 13px;
+}
+
+.grid {
+  display: grid;
+  gap: 10px;
+}
+
+label span {
+  display: block;
+  font-size: 12px;
+  opacity: 0.85;
+  margin-bottom: 4px;
+}
+
+input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.2);
+  outline: none;
+}
+
+input:focus {
+  border-color: rgba(0,0,0,0.45);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+button {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 0;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
+}
+
+.status {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.hint {
+  margin-top: 14px;
+  font-size: 12px;
+  opacity: 0.8;
+}

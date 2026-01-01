@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>DDR Nav Config</title>
+    <link rel="stylesheet" href="config.css" />
+  </head>
+  <body>
+    <h1>DDR Nav</h1>
+    <p class="sub">Assign a URL to each direction, then Save.</p>
+
+    <div class="grid">
+      <label>
+        <span>Left (←)</span>
+        <input id="left" type="text" placeholder="https://example.com" />
+      </label>
+
+      <label>
+        <span>Down (↓)</span>
+        <input id="down" type="text" placeholder="https://example.com" />
+      </label>
+
+      <label>
+        <span>Up (↑)</span>
+        <input id="up" type="text" placeholder="https://example.com" />
+      </label>
+
+      <label>
+        <span>Right (→)</span>
+        <input id="right" type="text" placeholder="https://example.com" />
+      </label>
+    </div>
+
+    <div class="row">
+      <button id="save">Save</button>
+      <span id="status" class="status"></span>
+    </div>
+
+    <p class="hint">
+      Usage: Hold <b>Cmd + Shift + Y</b>, then press one arrow key.
+    </p>
+
+    <script src="config.js"></script>
+  </body>
+</html>
