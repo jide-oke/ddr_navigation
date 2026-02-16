@@ -10,25 +10,45 @@
     <p class="sub">Assign URLs to single arrows and optional arrow sequences, then Save.</p>
 
     <div class="grid">
-      <label>
+      <div class="field">
         <span>Left (←)</span>
         <input id="left" type="text" placeholder="https://example.com" />
-      </label>
+        <input id="left-name" type="text" placeholder="Nickname (optional)" />
+        <label class="inline-toggle">
+          <input id="left-newtab" type="checkbox" />
+          <span>Open in new tab</span>
+        </label>
+      </div>
 
-      <label>
+      <div class="field">
         <span>Down (↓)</span>
         <input id="down" type="text" placeholder="https://example.com" />
-      </label>
+        <input id="down-name" type="text" placeholder="Nickname (optional)" />
+        <label class="inline-toggle">
+          <input id="down-newtab" type="checkbox" />
+          <span>Open in new tab</span>
+        </label>
+      </div>
 
-      <label>
+      <div class="field">
         <span>Up (↑)</span>
         <input id="up" type="text" placeholder="https://example.com" />
-      </label>
+        <input id="up-name" type="text" placeholder="Nickname (optional)" />
+        <label class="inline-toggle">
+          <input id="up-newtab" type="checkbox" />
+          <span>Open in new tab</span>
+        </label>
+      </div>
 
-      <label>
+      <div class="field">
         <span>Right (→)</span>
         <input id="right" type="text" placeholder="https://example.com" />
-      </label>
+        <input id="right-name" type="text" placeholder="Nickname (optional)" />
+        <label class="inline-toggle">
+          <input id="right-newtab" type="checkbox" />
+          <span>Open in new tab</span>
+        </label>
+      </div>
     </div>
 
     <section class="combos">
@@ -38,6 +58,9 @@
       </div>
       <p class="combos-sub">
         Sequence examples: <code>left,left</code>, <code>up right down</code>, or arrow symbols like <code>← ←</code>.
+      </p>
+      <p class="combos-sub">
+        Tip: add a nickname so the rolodex shows a readable label instead of the URL.
       </p>
       <div id="combosList" class="combos-list"></div>
     </section>

@@ -19,7 +19,7 @@ h1 {
   gap: 10px;
 }
 
-label span {
+.field > span {
   display: block;
   font-size: 12px;
   opacity: 0.85;
@@ -38,8 +38,29 @@ input:focus {
   border-color: rgba(0,0,0,0.45);
 }
 
+.field input + input {
+  margin-top: 6px;
+}
+
 input.invalid {
   border-color: #d02626;
+}
+
+.inline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.inline-toggle input {
+  width: auto;
+}
+
+.inline-toggle span {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.85;
 }
 
 .combos {
@@ -71,8 +92,26 @@ h2 {
 
 .combo-row {
   display: grid;
-  grid-template-columns: 1fr 1.8fr auto;
+  grid-template-columns: 1fr 1.5fr 1.2fr auto auto;
   gap: 8px;
+}
+
+.combo-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.combo-toggle input {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.combo-toggle span {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.85;
 }
 
 .row {

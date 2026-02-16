@@ -7,6 +7,7 @@
     ArrowRight: "right"
   };
   const SEQUENCE_TIMEOUT_MS = 600;
+  const DISPLAY_LABEL_MAX_CHARS = 28;
 
   // ---------- Overlay ----------
   const overlay = document.createElement("div");
@@ -15,10 +16,22 @@
 
   overlay.innerHTML = `
     <div class="ddr-receptors">
-      <div class="ddr-receptor" data-dir="left">${arrowSvg("left")}</div>
-      <div class="ddr-receptor" data-dir="down">${arrowSvg("down")}</div>
-      <div class="ddr-receptor" data-dir="up">${arrowSvg("up")}</div>
-      <div class="ddr-receptor" data-dir="right">${arrowSvg("right")}</div>
+      <div class="ddr-receptor" data-dir="left">
+        <div class="ddr-choice ddr-empty" data-role="choice"></div>
+        ${arrowSvg("left")}
+      </div>
+      <div class="ddr-receptor" data-dir="down">
+        <div class="ddr-choice ddr-empty" data-role="choice"></div>
+        ${arrowSvg("down")}
+      </div>
+      <div class="ddr-receptor" data-dir="up">
+        <div class="ddr-choice ddr-empty" data-role="choice"></div>
+        ${arrowSvg("up")}
+      </div>
+      <div class="ddr-receptor" data-dir="right">
+        <div class="ddr-choice ddr-empty" data-role="choice"></div>
+        ${arrowSvg("right")}
+      </div>
     </div>
   `;
 
@@ -48,19 +61,51 @@
       -webkit-backdrop-filter: blur(6px);
     }
     .ddr-receptor{
-      width: 44px;
-      height: 44px;
+      width: clamp(84px, 16vw, 122px);
+      min-height: 68px;
+      padding: 6px 8px 8px;
       border-radius: 12px;
       background: rgba(255,255,255,0.10);
       border: 2px solid rgba(255,255,255,0.55);
-      display: grid;
-      place-items: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      perspective: 500px;
       box-shadow: 0 6px 18px rgba(0,0,0,0.25);
       transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
     }
+    .ddr-choice{
+      width: 100%;
+      min-height: 16px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      background: rgba(0,0,0,0.26);
+      color: rgba(255,255,255,0.96);
+      font: 600 10px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transform-origin: 50% 0%;
+      backface-visibility: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    .ddr-choice.ddr-empty{
+      opacity: 0.25;
+      background: rgba(0,0,0,0.16);
+    }
+    .ddr-choice.ddr-roll{
+      animation: ddr-roll 220ms ease;
+    }
+    @keyframes ddr-roll {
+      0% { transform: rotateX(-88deg); opacity: 0; }
+      100% { transform: rotateX(0deg); opacity: 1; }
+    }
     .ddr-receptor svg{
-      width: 26px;
-      height: 26px;
+      width: 22px;
+      height: 22px;
       opacity: 0.95;
       filter: drop-shadow(0 2px 2px rgba(0,0,0,0.35));
     }
@@ -76,8 +121,12 @@
 
   // ---------- URL mappings ----------
   let rawUrls = {};
+  let rawNames = {};
+  let rawOpenInNewTab = {};
+  let legacyGlobalOpenInNewTab = false;
   let bindings = new Map();
   let prefixes = new Set();
+  const shownChoices = Object.fromEntries(DIRECTIONS.map((dir) => [dir, ""]));
 
   function normalizeSequenceKey(value) {
     const cleaned = String(value || "")
@@ -104,12 +153,34 @@
   function rebuildBindings() {
     const nextBindings = new Map();
     const nextPrefixes = new Set();
+    const normalizedNames = new Map();
+    const normalizedOpenInNewTab = new Set();
+
+    for (const [rawKey, rawLabel] of Object.entries(rawNames)) {
+      const key = normalizeSequenceKey(rawKey);
+      const label = clipLabel(String(rawLabel || "").trim());
+      if (!key || !label) continue;
+      normalizedNames.set(key, label);
+    }
+
+    for (const [rawKey, rawOpen] of Object.entries(rawOpenInNewTab)) {
+      if (!rawOpen) continue;
+      const key = normalizeSequenceKey(rawKey);
+      if (!key) continue;
+      normalizedOpenInNewTab.add(key);
+    }
+
+    const useLegacyGlobal = legacyGlobalOpenInNewTab && normalizedOpenInNewTab.size === 0;
 
     for (const [rawKey, rawTarget] of Object.entries(rawUrls)) {
       const target = String(rawTarget || "").trim();
       const key = normalizeSequenceKey(rawKey);
       if (!key || !target) continue;
-      nextBindings.set(key, target);
+      nextBindings.set(key, {
+        url: target,
+        label: normalizedNames.get(key) || "",
+        openInNewTab: normalizedOpenInNewTab.has(key) || useLegacyGlobal
+      });
     }
 
     for (const key of nextBindings.keys()) {
@@ -123,17 +194,96 @@
     prefixes = nextPrefixes;
   }
 
+  function clipLabel(text) {
+    if (text.length <= DISPLAY_LABEL_MAX_CHARS) return text;
+    return `${text.slice(0, DISPLAY_LABEL_MAX_CHARS - 1)}...`;
+  }
+
+  function formatTargetLabel(target) {
+    const value = String(target || "").trim();
+    if (!value) return "";
+
+    try {
+      const parsed = new URL(value);
+      const host = parsed.hostname.replace(/^www\./, "");
+      const path = parsed.pathname && parsed.pathname !== "/" ? parsed.pathname : "";
+      return clipLabel(`${host}${path}`);
+    } catch {
+      return clipLabel(value);
+    }
+  }
+
+  function getEntryLabel(entry) {
+    if (!entry) return "";
+    if (entry.label) return clipLabel(entry.label);
+    return formatTargetLabel(entry.url);
+  }
+
+  function setChoiceLabel(dir, label, animate = false) {
+    const next = label || "";
+    const el = overlay.querySelector(`.ddr-receptor[data-dir="${dir}"] .ddr-choice`);
+    if (!el) return;
+
+    const changed = shownChoices[dir] !== next;
+    shownChoices[dir] = next;
+    el.textContent = next || " ";
+    el.classList.toggle("ddr-empty", !next);
+
+    if (animate && changed) {
+      el.classList.remove("ddr-roll");
+      void el.offsetWidth;
+      el.classList.add("ddr-roll");
+    }
+  }
+
+  function renderChoices(prefixParts, animate = false) {
+    for (const dir of DIRECTIONS) {
+      const key = [...prefixParts, dir].join(",");
+      const entry = bindings.get(key) || null;
+      setChoiceLabel(dir, getEntryLabel(entry), animate);
+    }
+  }
+
   async function loadUrls() {
-    const data = await chrome.storage.sync.get("ddrNavUrls");
+    const data = await chrome.storage.sync.get([
+      "ddrNavUrls",
+      "ddrNavNames",
+      "ddrNavOpenInNewTab",
+      "ddrNavSettings"
+    ]);
     rawUrls = { ...(data.ddrNavUrls || {}) };
+    rawNames = { ...(data.ddrNavNames || {}) };
+    rawOpenInNewTab = { ...(data.ddrNavOpenInNewTab || {}) };
+    legacyGlobalOpenInNewTab = Boolean(data.ddrNavSettings?.openInNewTab);
     rebuildBindings();
+    renderChoices([], false);
   }
   loadUrls();
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "sync" && changes.ddrNavUrls) {
+    if (area !== "sync") return;
+
+    let needsRebuild = false;
+    if (changes.ddrNavUrls) {
       rawUrls = { ...(changes.ddrNavUrls.newValue || {}) };
+      needsRebuild = true;
+    }
+    if (changes.ddrNavNames) {
+      rawNames = { ...(changes.ddrNavNames.newValue || {}) };
+      needsRebuild = true;
+    }
+    if (changes.ddrNavOpenInNewTab) {
+      rawOpenInNewTab = { ...(changes.ddrNavOpenInNewTab.newValue || {}) };
+      needsRebuild = true;
+    }
+    if (changes.ddrNavSettings) {
+      legacyGlobalOpenInNewTab = Boolean(changes.ddrNavSettings.newValue?.openInNewTab);
+      needsRebuild = true;
+    }
+
+    if (needsRebuild) {
       rebuildBindings();
+      renderChoices(state.sequence, false);
     }
   });
 
@@ -153,6 +303,7 @@
 
   function show() {
     overlay.classList.add("ddr-visible");
+    renderChoices(state.sequence, false);
   }
 
   function hide() {
@@ -183,7 +334,7 @@
     clearReceptorHighlights();
   }
 
-  function activate(dir, target) {
+  function activate(dir, target, openInNewTab = false) {
     state.navigating = true;
     clearSequenceTimer();
     setActiveReceptor(dir);
@@ -195,8 +346,15 @@
       clearSequence();
 
       if (target) {
-        // Navigate current tab
-        window.location.assign(target);
+        if (openInNewTab) {
+          chrome.runtime.sendMessage({ type: "ddr-open-url-new-tab", url: target }, (response) => {
+            if (chrome.runtime.lastError || !response?.ok) {
+              window.location.assign(target);
+            }
+          });
+        } else {
+          window.location.assign(target);
+        }
       }
     }, 350);
   }
@@ -208,10 +366,10 @@
     const sequenceKey = state.sequence.join(",");
     if (!sequenceKey) return;
 
-    const target = bindings.get(sequenceKey);
-    if (target) {
+    const entry = bindings.get(sequenceKey);
+    if (entry?.url) {
       const parts = sequenceKey.split(",");
-      activate(parts[parts.length - 1], target);
+      activate(parts[parts.length - 1], entry.url, entry.openInNewTab);
       return;
     }
 
@@ -224,37 +382,43 @@
       if (state.navigating) return;
       if (state.sequence.join(",") !== sequenceKey) return;
 
-      const target = bindings.get(sequenceKey);
-      if (target) {
+      const entry = bindings.get(sequenceKey);
+      if (entry?.url) {
         const parts = sequenceKey.split(",");
-        activate(parts[parts.length - 1], target);
+        activate(parts[parts.length - 1], entry.url, entry.openInNewTab);
         return;
       }
 
       clearSequence();
-      if (!comboHeld()) hide();
+      if (comboHeld()) {
+        renderChoices([], true);
+      } else {
+        hide();
+      }
     }, SEQUENCE_TIMEOUT_MS);
   }
 
   function handleArrowInput(dir) {
     state.sequence.push(dir);
     const sequenceKey = state.sequence.join(",");
-    const exactTarget = bindings.get(sequenceKey);
+    const exactEntry = bindings.get(sequenceKey);
     const hasLongerMatch = prefixes.has(sequenceKey);
 
-    if (exactTarget && !hasLongerMatch) {
-      activate(dir, exactTarget);
+    if (exactEntry?.url && !hasLongerMatch) {
+      activate(dir, exactEntry.url, exactEntry.openInNewTab);
       return;
     }
 
     setActiveReceptor(dir);
+    renderChoices(state.sequence, true);
 
-    if (exactTarget || hasLongerMatch) {
+    if (exactEntry?.url || hasLongerMatch) {
       scheduleResolution(sequenceKey);
       return;
     }
 
     clearSequence();
+    renderChoices([], true);
   }
 
   function resetAll() {
