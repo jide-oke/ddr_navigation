@@ -6,6 +6,12 @@
     ArrowUp: "up",
     ArrowRight: "right"
   };
+  const DIRECTION_KEY_IMAGE_PATHS = {
+    left: "assets/ddr-keys/left.png",
+    down: "assets/ddr-keys/down.png",
+    up: "assets/ddr-keys/up.png",
+    right: "assets/ddr-keys/right.png"
+  };
   const SEQUENCE_TIMEOUT_MS = 600;
   const DISPLAY_LABEL_MAX_CHARS = 28;
 
@@ -18,19 +24,19 @@
     <div class="ddr-receptors">
       <div class="ddr-receptor" data-dir="left">
         <div class="ddr-choice ddr-empty" data-role="choice"></div>
-        ${arrowSvg("left")}
+        ${directionalKeyImage("left")}
       </div>
       <div class="ddr-receptor" data-dir="down">
         <div class="ddr-choice ddr-empty" data-role="choice"></div>
-        ${arrowSvg("down")}
+        ${directionalKeyImage("down")}
       </div>
       <div class="ddr-receptor" data-dir="up">
         <div class="ddr-choice ddr-empty" data-role="choice"></div>
-        ${arrowSvg("up")}
+        ${directionalKeyImage("up")}
       </div>
       <div class="ddr-receptor" data-dir="right">
         <div class="ddr-choice ddr-empty" data-role="choice"></div>
-        ${arrowSvg("right")}
+        ${directionalKeyImage("right")}
       </div>
     </div>
   `;
@@ -103,9 +109,10 @@
       0% { transform: rotateX(-88deg); opacity: 0; }
       100% { transform: rotateX(0deg); opacity: 1; }
     }
-    .ddr-receptor svg{
-      width: 22px;
-      height: 22px;
+    .ddr-key-image{
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
       opacity: 0.95;
       filter: drop-shadow(0 2px 2px rgba(0,0,0,0.35));
     }
@@ -220,7 +227,7 @@
   }
 
   function setChoiceLabel(dir, label, animate = false) {
-    const next = label || "";
+    const next = (label || "").toUpperCase();
     const el = overlay.querySelector(`.ddr-receptor[data-dir="${dir}"] .ddr-choice`);
     if (!el) return;
 
@@ -294,7 +301,8 @@
     y: false,
     sequence: [],
     sequenceTimer: null,
-    navigating: false
+    navigating: false,
+    navigationTimer: null
   };
 
   function comboHeld() {
@@ -318,6 +326,13 @@
     }
   }
 
+  function clearNavigationTimer() {
+    if (state.navigationTimer) {
+      clearTimeout(state.navigationTimer);
+      state.navigationTimer = null;
+    }
+  }
+
   function clearReceptorHighlights() {
     overlay.querySelectorAll(".ddr-receptor").forEach((el) => el.classList.remove("ddr-active"));
   }
@@ -337,10 +352,12 @@
   function activate(dir, target, openInNewTab = false) {
     state.navigating = true;
     clearSequenceTimer();
+    clearNavigationTimer();
     setActiveReceptor(dir);
 
     // keep DDR feel: light up, then fade away; navigate after the flash
-    setTimeout(() => {
+    state.navigationTimer = setTimeout(() => {
+      state.navigationTimer = null;
       hide();
       state.navigating = false;
       clearSequence();
@@ -422,6 +439,7 @@
   }
 
   function resetAll() {
+    clearNavigationTimer();
     state.meta = false;
     state.shift = false;
     state.y = false;
@@ -433,6 +451,21 @@
   window.addEventListener(
     "keydown",
     (e) => {
+      if (e.key === "Escape") {
+        const ddrActive =
+          overlay.classList.contains("ddr-visible") ||
+          state.navigating ||
+          state.sequence.length > 0 ||
+          comboHeld();
+
+        if (ddrActive) {
+          e.preventDefault();
+          e.stopPropagation();
+          resetAll();
+        }
+        return;
+      }
+
       if (e.key === "Meta") state.meta = true;
       if (e.key === "Shift") state.shift = true;
       if (e.key && e.key.toLowerCase() === "y") state.y = true;
@@ -480,20 +513,8 @@
 
   window.addEventListener("blur", resetAll);
 
-  function arrowSvg(dir) {
-    const rotation =
-      dir === "up" ? 0 :
-      dir === "right" ? 90 :
-      dir === "down" ? 180 :
-      270;
-
-    return `
-      <svg viewBox="0 0 24 24" style="transform: rotate(${rotation}deg)">
-        <path d="M12 3l7 7h-4v11H9V10H5l7-7z"
-              fill="rgba(255,255,255,0.92)"/>
-        <path d="M12 3l7 7h-4v11H9V10H5l7-7z"
-              fill="none" stroke="rgba(0,0,0,0.35)" stroke-width="1.2"/>
-      </svg>
-    `;
+  function directionalKeyImage(dir) {
+    const src = chrome.runtime.getURL(DIRECTION_KEY_IMAGE_PATHS[dir]);
+    return `<img class="ddr-key-image" src="${src}" alt="" />`;
   }
 })();
