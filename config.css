@@ -38,6 +38,43 @@ input:focus {
   border-color: rgba(0,0,0,0.45);
 }
 
+input.invalid {
+  border-color: #d02626;
+}
+
+.combos {
+  margin-top: 14px;
+}
+
+.combos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.combos-sub {
+  margin: 6px 0 10px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.combos-list {
+  display: grid;
+  gap: 8px;
+}
+
+.combo-row {
+  display: grid;
+  grid-template-columns: 1fr 1.8fr auto;
+  gap: 8px;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -52,6 +89,12 @@ button {
   background: #111;
   color: #fff;
   cursor: pointer;
+}
+
+.ghost {
+  border: 1px solid rgba(0,0,0,0.25);
+  background: #fff;
+  color: #111;
 }
 
 .status {

@@ -7,7 +7,7 @@
   </head>
   <body>
     <h1>DDR Nav</h1>
-    <p class="sub">Assign a URL to each direction, then Save.</p>
+    <p class="sub">Assign URLs to single arrows and optional arrow sequences, then Save.</p>
 
     <div class="grid">
       <label>
@@ -31,13 +31,24 @@
       </label>
     </div>
 
+    <section class="combos">
+      <div class="combos-header">
+        <h2>Combo shortcuts</h2>
+        <button id="addCombo" type="button" class="ghost">Add combo</button>
+      </div>
+      <p class="combos-sub">
+        Sequence examples: <code>left,left</code>, <code>up right down</code>, or arrow symbols like <code>← ←</code>.
+      </p>
+      <div id="combosList" class="combos-list"></div>
+    </section>
+
     <div class="row">
       <button id="save">Save</button>
       <span id="status" class="status"></span>
     </div>
 
     <p class="hint">
-      Usage: Hold <b>Cmd + Shift + Y</b>, then press one arrow key.
+      Usage: Hold <b>Cmd + Shift + Y</b>, then enter one or more arrow keys.
     </p>
 
     <script src="config.js"></script>

@@ -1,4 +1,13 @@
 (() => {
+  const DIRECTIONS = ["left", "down", "up", "right"];
+  const ARROW_KEY_TO_DIR = {
+    ArrowLeft: "left",
+    ArrowDown: "down",
+    ArrowUp: "up",
+    ArrowRight: "right"
+  };
+  const SEQUENCE_TIMEOUT_MS = 600;
+
   // ---------- Overlay ----------
   const overlay = document.createElement("div");
   overlay.id = "ddr-receptors-overlay";
@@ -66,17 +75,65 @@
   document.documentElement.appendChild(overlay);
 
   // ---------- URL mappings ----------
-  let urls = { left: "", down: "", up: "", right: "" };
+  let rawUrls = {};
+  let bindings = new Map();
+  let prefixes = new Set();
+
+  function normalizeSequenceKey(value) {
+    const cleaned = String(value || "")
+      .toLowerCase()
+      .replace(/arrow/g, "")
+      .replace(/←/g, "left")
+      .replace(/↓/g, "down")
+      .replace(/↑/g, "up")
+      .replace(/→/g, "right")
+      .trim();
+
+    if (!cleaned) return "";
+
+    const parts = cleaned
+      .split(/[\s,>+|/\\-]+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (!parts.length || parts.some((part) => !DIRECTIONS.includes(part))) return "";
+
+    return parts.join(",");
+  }
+
+  function rebuildBindings() {
+    const nextBindings = new Map();
+    const nextPrefixes = new Set();
+
+    for (const [rawKey, rawTarget] of Object.entries(rawUrls)) {
+      const target = String(rawTarget || "").trim();
+      const key = normalizeSequenceKey(rawKey);
+      if (!key || !target) continue;
+      nextBindings.set(key, target);
+    }
+
+    for (const key of nextBindings.keys()) {
+      const parts = key.split(",");
+      for (let i = 1; i < parts.length; i += 1) {
+        nextPrefixes.add(parts.slice(0, i).join(","));
+      }
+    }
+
+    bindings = nextBindings;
+    prefixes = nextPrefixes;
+  }
 
   async function loadUrls() {
     const data = await chrome.storage.sync.get("ddrNavUrls");
-    urls = { left: "", down: "", up: "", right: "", ...(data.ddrNavUrls || {}) };
+    rawUrls = { ...(data.ddrNavUrls || {}) };
+    rebuildBindings();
   }
   loadUrls();
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "sync" && changes.ddrNavUrls) {
-      urls = { left: "", down: "", up: "", right: "", ...(changes.ddrNavUrls.newValue || {}) };
+      rawUrls = { ...(changes.ddrNavUrls.newValue || {}) };
+      rebuildBindings();
     }
   });
 
@@ -85,7 +142,9 @@
     meta: false,
     shift: false,
     y: false,
-    consumed: false // only one arrow per activation
+    sequence: [],
+    sequenceTimer: null,
+    navigating: false
   };
 
   function comboHeld() {
@@ -98,19 +157,42 @@
 
   function hide() {
     overlay.classList.remove("ddr-visible");
-    overlay.querySelectorAll(".ddr-receptor").forEach(el => el.classList.remove("ddr-active"));
+    overlay.querySelectorAll(".ddr-receptor").forEach((el) => el.classList.remove("ddr-active"));
   }
 
-  function activate(dir) {
+  function clearSequenceTimer() {
+    if (state.sequenceTimer) {
+      clearTimeout(state.sequenceTimer);
+      state.sequenceTimer = null;
+    }
+  }
+
+  function clearReceptorHighlights() {
+    overlay.querySelectorAll(".ddr-receptor").forEach((el) => el.classList.remove("ddr-active"));
+  }
+
+  function setActiveReceptor(dir) {
+    clearReceptorHighlights();
     const el = overlay.querySelector(`.ddr-receptor[data-dir="${dir}"]`);
     if (el) el.classList.add("ddr-active");
+  }
+
+  function clearSequence() {
+    state.sequence = [];
+    clearSequenceTimer();
+    clearReceptorHighlights();
+  }
+
+  function activate(dir, target) {
+    state.navigating = true;
+    clearSequenceTimer();
+    setActiveReceptor(dir);
 
     // keep DDR feel: light up, then fade away; navigate after the flash
-    const target = (urls[dir] || "").trim();
-
     setTimeout(() => {
       hide();
-      state.consumed = false;
+      state.navigating = false;
+      clearSequence();
 
       if (target) {
         // Navigate current tab
@@ -119,11 +201,68 @@
     }, 350);
   }
 
+  function finalizeSequence() {
+    if (state.navigating) return;
+    clearSequenceTimer();
+
+    const sequenceKey = state.sequence.join(",");
+    if (!sequenceKey) return;
+
+    const target = bindings.get(sequenceKey);
+    if (target) {
+      const parts = sequenceKey.split(",");
+      activate(parts[parts.length - 1], target);
+      return;
+    }
+
+    clearSequence();
+  }
+
+  function scheduleResolution(sequenceKey) {
+    clearSequenceTimer();
+    state.sequenceTimer = setTimeout(() => {
+      if (state.navigating) return;
+      if (state.sequence.join(",") !== sequenceKey) return;
+
+      const target = bindings.get(sequenceKey);
+      if (target) {
+        const parts = sequenceKey.split(",");
+        activate(parts[parts.length - 1], target);
+        return;
+      }
+
+      clearSequence();
+      if (!comboHeld()) hide();
+    }, SEQUENCE_TIMEOUT_MS);
+  }
+
+  function handleArrowInput(dir) {
+    state.sequence.push(dir);
+    const sequenceKey = state.sequence.join(",");
+    const exactTarget = bindings.get(sequenceKey);
+    const hasLongerMatch = prefixes.has(sequenceKey);
+
+    if (exactTarget && !hasLongerMatch) {
+      activate(dir, exactTarget);
+      return;
+    }
+
+    setActiveReceptor(dir);
+
+    if (exactTarget || hasLongerMatch) {
+      scheduleResolution(sequenceKey);
+      return;
+    }
+
+    clearSequence();
+  }
+
   function resetAll() {
     state.meta = false;
     state.shift = false;
     state.y = false;
-    state.consumed = false;
+    state.navigating = false;
+    clearSequence();
     hide();
   }
 
@@ -136,26 +275,23 @@
 
       if (comboHeld()) show();
 
-      // One-arrow input while combo is held
-      if (comboHeld() && !state.consumed) {
-        const map = {
-          ArrowLeft: "left",
-          ArrowDown: "down",
-          ArrowUp: "up",
-          ArrowRight: "right"
-        };
+      if (!comboHeld() || state.navigating) return;
 
-        const dir = map[e.key];
-        if (dir) {
-          state.consumed = true;
+      const dir = ARROW_KEY_TO_DIR[e.key];
+      if (!dir) return;
 
-          // Stop page scroll while using the DDR input
-          e.preventDefault();
-          e.stopPropagation();
-
-          activate(dir);
-        }
+      // Ignore OS key-repeat to avoid accidental duplicate sequence entries.
+      if (e.repeat) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
       }
+
+      // Stop page scroll while using the DDR input
+      e.preventDefault();
+      e.stopPropagation();
+
+      handleArrowInput(dir);
     },
     true
   );
@@ -167,10 +303,12 @@
       if (e.key === "Shift") state.shift = false;
       if (e.key && e.key.toLowerCase() === "y") state.y = false;
 
-      // If you let go of the combo before choosing an arrow, fade away
       if (!comboHeld()) {
-        state.consumed = false;
-        hide();
+        finalizeSequence();
+        if (!state.navigating) {
+          clearSequence();
+          hide();
+        }
       }
     },
     true
