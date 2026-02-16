@@ -12,7 +12,9 @@
     up: "assets/ddr-keys/up.png",
     right: "assets/ddr-keys/right.png"
   };
-  const SEQUENCE_TIMEOUT_MS = 600;
+  const DEFAULT_COMBO_WINDOW_MS = 600;
+  const MIN_COMBO_WINDOW_MS = 200;
+  const MAX_COMBO_WINDOW_MS = 10000;
   const DISPLAY_LABEL_MAX_CHARS = 28;
 
   // ---------- Overlay ----------
@@ -161,10 +163,17 @@
   let rawNames = {};
   let rawOpenInNewTab = {};
   let legacyGlobalOpenInNewTab = false;
+  let comboWindowMs = DEFAULT_COMBO_WINDOW_MS;
   let bindings = new Map();
   let prefixes = new Set();
   const shownChoices = Object.fromEntries(DIRECTIONS.map((dir) => [dir, ""]));
   let comboWindowRafId = null;
+
+  function normalizeComboWindowMs(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return DEFAULT_COMBO_WINDOW_MS;
+    return Math.min(MAX_COMBO_WINDOW_MS, Math.max(MIN_COMBO_WINDOW_MS, Math.round(n)));
+  }
 
   function normalizeSequenceKey(value) {
     const cleaned = String(value || "")
@@ -293,6 +302,7 @@
     rawNames = { ...(data.ddrNavNames || {}) };
     rawOpenInNewTab = { ...(data.ddrNavOpenInNewTab || {}) };
     legacyGlobalOpenInNewTab = Boolean(data.ddrNavSettings?.openInNewTab);
+    comboWindowMs = normalizeComboWindowMs(data.ddrNavSettings?.comboWindowMs);
     rebuildBindings();
     renderChoices([], false);
   }
@@ -316,6 +326,7 @@
     }
     if (changes.ddrNavSettings) {
       legacyGlobalOpenInNewTab = Boolean(changes.ddrNavSettings.newValue?.openInNewTab);
+      comboWindowMs = normalizeComboWindowMs(changes.ddrNavSettings.newValue?.comboWindowMs);
       needsRebuild = true;
     }
 
@@ -463,7 +474,7 @@
 
   function scheduleResolution(sequenceKey) {
     clearSequenceTimer();
-    startComboWindow(SEQUENCE_TIMEOUT_MS);
+    startComboWindow(comboWindowMs);
     state.sequenceTimer = setTimeout(() => {
       state.sequenceTimer = null;
       hideComboWindow();
@@ -483,7 +494,7 @@
       } else {
         hide();
       }
-    }, SEQUENCE_TIMEOUT_MS);
+    }, comboWindowMs);
   }
 
   function handleArrowInput(dir) {

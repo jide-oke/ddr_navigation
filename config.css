@@ -90,6 +90,25 @@ h2 {
   gap: 8px;
 }
 
+.timing {
+  margin-top: 14px;
+}
+
+.timing-field {
+  display: grid;
+  gap: 6px;
+}
+
+.timing-field > span {
+  display: block;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.timing-field input {
+  width: 120px;
+}
+
 .combo-row {
   display: grid;
   grid-template-columns: 1fr 1.5fr 1.2fr auto auto;

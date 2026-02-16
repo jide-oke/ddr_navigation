@@ -65,6 +65,17 @@
       <div id="combosList" class="combos-list"></div>
     </section>
 
+    <section class="timing">
+      <h2>Timing</h2>
+      <label class="timing-field" for="comboWindowSeconds">
+        <span>Combo window (seconds)</span>
+        <input id="comboWindowSeconds" type="number" min="0.2" max="10" step="0.1" />
+      </label>
+      <p class="combos-sub">
+        Increase this to make combo entry more forgiving. Lower values make combos resolve faster.
+      </p>
+    </section>
+
     <div class="row">
       <button id="save">Save</button>
       <span id="status" class="status"></span>

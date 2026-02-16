@@ -1,5 +1,8 @@
 const DIRECTIONS = ["left", "down", "up", "right"];
 const MAX_LABEL_LENGTH = 28;
+const DEFAULT_COMBO_WINDOW_MS = 600;
+const MIN_COMBO_WINDOW_MS = 200;
+const MAX_COMBO_WINDOW_MS = 10000;
 
 function normalizeSequence(value) {
   const cleaned = String(value || "")
@@ -37,6 +40,22 @@ function normalizeNickname(value) {
   return String(value || "").trim().slice(0, MAX_LABEL_LENGTH);
 }
 
+function normalizeComboWindowMs(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_COMBO_WINDOW_MS;
+  return Math.min(MAX_COMBO_WINDOW_MS, Math.max(MIN_COMBO_WINDOW_MS, Math.round(n)));
+}
+
+function parseComboWindowSeconds(value) {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds)) return DEFAULT_COMBO_WINDOW_MS;
+  return normalizeComboWindowMs(seconds * 1000);
+}
+
+function formatComboWindowSeconds(ms) {
+  return (normalizeComboWindowMs(ms) / 1000).toFixed(1);
+}
+
 function createComboRow(sequence = "", url = "", nickname = "", openInNewTab = false) {
   const row = document.createElement("div");
   row.className = "combo-row";
@@ -67,6 +86,7 @@ async function load() {
   const openInNewTabByKey = data.ddrNavOpenInNewTab || {};
   const settings = data.ddrNavSettings || {};
   const globalOpenInNewTab = Boolean(settings.openInNewTab);
+  const comboWindowMs = normalizeComboWindowMs(settings.comboWindowMs);
   const combosList = document.getElementById("combosList");
 
   combosList.innerHTML = "";
@@ -91,12 +111,15 @@ async function load() {
     if (DIRECTIONS.includes(sequence)) continue;
     combosList.appendChild(createComboRow(sequence, url, nickname, openInNewTab));
   }
+
+  document.getElementById("comboWindowSeconds").value = formatComboWindowSeconds(comboWindowMs);
 }
 
 async function save() {
   const urls = {};
   const names = {};
   const openInNewTabByKey = {};
+  const comboWindowMs = parseComboWindowSeconds(document.getElementById("comboWindowSeconds").value);
   for (const k of DIRECTIONS) {
     const target = normalizeUrl(document.getElementById(k).value);
     const nickname = normalizeNickname(document.getElementById(`${k}-name`).value);
@@ -148,7 +171,8 @@ async function save() {
     ddrNavNames: names,
     ddrNavOpenInNewTab: openInNewTabByKey,
     ddrNavSettings: {
-      openInNewTab: false
+      openInNewTab: false,
+      comboWindowMs
     }
   });
 
