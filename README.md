@@ -1,6 +1,9 @@
 # DDR Navigation (Chrome Extension)
 
 Basically you can use dance dance revolution keyboard combos to load your favorite URLs.
+![ddrgif](https://github.com/user-attachments/assets/c7365922-05ee-4234-a4e4-2d091dd2d076)
+
+Press Cmd + Shift + Y to activate it
 
 ## Current Version
 
