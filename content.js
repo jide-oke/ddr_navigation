@@ -21,22 +21,27 @@
   overlay.setAttribute("aria-hidden", "true");
 
   overlay.innerHTML = `
-    <div class="ddr-receptors">
-      <div class="ddr-receptor" data-dir="left">
-        <div class="ddr-choice ddr-empty" data-role="choice"></div>
-        ${directionalKeyImage("left")}
+    <div class="ddr-panel">
+      <div class="ddr-combo-window" aria-hidden="true">
+        <div class="ddr-combo-window-fill"></div>
       </div>
-      <div class="ddr-receptor" data-dir="down">
-        <div class="ddr-choice ddr-empty" data-role="choice"></div>
-        ${directionalKeyImage("down")}
-      </div>
-      <div class="ddr-receptor" data-dir="up">
-        <div class="ddr-choice ddr-empty" data-role="choice"></div>
-        ${directionalKeyImage("up")}
-      </div>
-      <div class="ddr-receptor" data-dir="right">
-        <div class="ddr-choice ddr-empty" data-role="choice"></div>
-        ${directionalKeyImage("right")}
+      <div class="ddr-receptors">
+        <div class="ddr-receptor" data-dir="left">
+          <div class="ddr-choice ddr-empty" data-role="choice"></div>
+          ${directionalKeyImage("left")}
+        </div>
+        <div class="ddr-receptor" data-dir="down">
+          <div class="ddr-choice ddr-empty" data-role="choice"></div>
+          ${directionalKeyImage("down")}
+        </div>
+        <div class="ddr-receptor" data-dir="up">
+          <div class="ddr-choice ddr-empty" data-role="choice"></div>
+          ${directionalKeyImage("up")}
+        </div>
+        <div class="ddr-receptor" data-dir="right">
+          <div class="ddr-choice ddr-empty" data-role="choice"></div>
+          ${directionalKeyImage("right")}
+        </div>
       </div>
     </div>
   `;
@@ -56,6 +61,29 @@
     #ddr-receptors-overlay.ddr-visible{
       opacity: 1;
       transform: translateY(0);
+    }
+    .ddr-panel{
+      display: grid;
+      gap: 6px;
+    }
+    .ddr-combo-window{
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.24);
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity 90ms ease;
+    }
+    .ddr-combo-window.ddr-active{
+      opacity: 1;
+    }
+    .ddr-combo-window-fill{
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, rgba(105,255,198,0.95), rgba(75,188,255,0.95));
+      transform-origin: left center;
+      transform: scaleX(0);
+      will-change: transform;
     }
     .ddr-receptors{
       display: inline-flex;
@@ -125,6 +153,8 @@
 
   document.documentElement.appendChild(style);
   document.documentElement.appendChild(overlay);
+  const comboWindowEl = overlay.querySelector(".ddr-combo-window");
+  const comboWindowFillEl = overlay.querySelector(".ddr-combo-window-fill");
 
   // ---------- URL mappings ----------
   let rawUrls = {};
@@ -134,6 +164,7 @@
   let bindings = new Map();
   let prefixes = new Set();
   const shownChoices = Object.fromEntries(DIRECTIONS.map((dir) => [dir, ""]));
+  let comboWindowRafId = null;
 
   function normalizeSequenceKey(value) {
     const cleaned = String(value || "")
@@ -317,6 +348,7 @@
   function hide() {
     overlay.classList.remove("ddr-visible");
     overlay.querySelectorAll(".ddr-receptor").forEach((el) => el.classList.remove("ddr-active"));
+    hideComboWindow();
   }
 
   function clearSequenceTimer() {
@@ -324,6 +356,42 @@
       clearTimeout(state.sequenceTimer);
       state.sequenceTimer = null;
     }
+    hideComboWindow();
+  }
+
+  function hideComboWindow() {
+    if (comboWindowRafId) {
+      cancelAnimationFrame(comboWindowRafId);
+      comboWindowRafId = null;
+    }
+    comboWindowEl?.classList.remove("ddr-active");
+    if (comboWindowFillEl) {
+      comboWindowFillEl.style.transform = "scaleX(0)";
+    }
+  }
+
+  function startComboWindow(durationMs) {
+    hideComboWindow();
+    if (!comboWindowEl || !comboWindowFillEl || durationMs <= 0) return;
+
+    comboWindowEl.classList.add("ddr-active");
+    const startedAt = performance.now();
+    comboWindowFillEl.style.transform = "scaleX(1)";
+
+    const tick = (now) => {
+      const elapsed = now - startedAt;
+      const remaining = Math.max(0, durationMs - elapsed);
+      const progress = remaining / durationMs;
+      comboWindowFillEl.style.transform = `scaleX(${progress})`;
+
+      if (remaining > 0) {
+        comboWindowRafId = requestAnimationFrame(tick);
+      } else {
+        comboWindowRafId = null;
+      }
+    };
+
+    comboWindowRafId = requestAnimationFrame(tick);
   }
 
   function clearNavigationTimer() {
@@ -395,7 +463,10 @@
 
   function scheduleResolution(sequenceKey) {
     clearSequenceTimer();
+    startComboWindow(SEQUENCE_TIMEOUT_MS);
     state.sequenceTimer = setTimeout(() => {
+      state.sequenceTimer = null;
+      hideComboWindow();
       if (state.navigating) return;
       if (state.sequence.join(",") !== sequenceKey) return;
 
