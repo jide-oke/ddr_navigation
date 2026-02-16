@@ -1,18 +1,19 @@
 # DDR Navigation (Chrome Extension)
 
-DDR Navigation is a keyboard-driven Chrome extension inspired by DDR-style directional input.
-Hold a key combo, tap arrow directions (including multi-step combos), and jump to saved URLs fast.
+Basically you can use dance dance revolution keyboard combos to load your favorite URLs.
+
+## Current Version
+
+- Name: `DDR Navigation`
+- Version: `1.0`
 
 ## Features
 
 - 4 base directional shortcuts: left, down, up, right
 - Multi-step combos (example: `left,left` or `up,right,down`)
-- Rolodex-style next-choice preview while entering combos
-- Optional nickname per shortcut/ combo (shown in the overlay in uppercase)
 - Per-entry `Open in new tab` toggle
 - Adjustable combo decision window (persistent, in seconds)
 - Escape-to-cancel at any point during combo input
-- Custom directional key images in overlay
 
 ## Install (Local / Unpacked)
 
@@ -54,8 +55,3 @@ Hold a key combo, tap arrow directions (including multi-step combos), and jump t
 - `config.html` / `config.css` / `config.js`: settings UI and persistence
 - `assets/ddr-keys/`: directional key images used in overlay
 - `assets/icons/`: extension icon sizes (16/32/48/128)
-
-## Current Version
-
-- Name: `DDR Navigation`
-- Version: `1.0`
