@@ -8,6 +8,8 @@ const MAX_LABEL_LENGTH = 28;
 const DEFAULT_COMBO_WINDOW_MS = 600;
 const MIN_COMBO_WINDOW_MS = 200;
 const MAX_COMBO_WINDOW_MS = 10000;
+const EXPORT_FORMAT = "ddr-navigation-presets";
+const EXPORT_VERSION = 1;
 
 let presetState = null;
 let activePresetId = PRESET_IDS[0];
@@ -67,6 +69,17 @@ function formatComboWindowSeconds(ms) {
 
 function getPresetLabel(presetId) {
   return PRESETS.find((preset) => preset.id === presetId)?.label || presetId;
+}
+
+function makeTimestamp() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hour = String(d.getHours()).padStart(2, "0");
+  const minute = String(d.getMinutes()).padStart(2, "0");
+  const second = String(d.getSeconds()).padStart(2, "0");
+  return `${year}${month}${day}-${hour}${minute}${second}`;
 }
 
 function flashStatus(text, durationMs = 1800) {
@@ -305,6 +318,64 @@ async function persistPresetState() {
   });
 }
 
+function buildExportPayload() {
+  return {
+    format: EXPORT_FORMAT,
+    version: EXPORT_VERSION,
+    exportedAt: new Date().toISOString(),
+    data: {
+      activePresetId,
+      presets: presetState.presets
+    }
+  };
+}
+
+function syncActivePresetDraftFromForm() {
+  if (!presetState) return;
+  const draft = collectPresetFromForm({ markInvalid: false }).preset;
+  presetState.presets[activePresetId] = draft;
+}
+
+function exportSettingsJson() {
+  if (!presetState) return;
+  syncActivePresetDraftFromForm();
+
+  const payload = buildExportPayload();
+  const content = JSON.stringify(payload, null, 2);
+  const blob = new Blob([content], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `ddr-navigation-presets-${makeTimestamp()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  flashStatus("Exported presets ✓", 1400);
+}
+
+function normalizeImportedPresetState(raw) {
+  const state = raw?.data && raw?.format === EXPORT_FORMAT ? raw.data : raw;
+  if (!state || typeof state !== "object") {
+    throw new Error("Invalid preset file format");
+  }
+  return ensurePresetState({ ddrNavPresetState: state });
+}
+
+async function importSettingsFromFile(file) {
+  if (!file) return;
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+  const imported = normalizeImportedPresetState(parsed);
+
+  presetState = imported;
+  activePresetId = imported.activePresetId;
+  renderPresetSelect();
+  loadPresetIntoForm(getActivePreset());
+  await persistPresetState();
+  flashStatus("Imported presets ✓", 1600);
+}
+
 async function load() {
   const data = await chrome.storage.sync.get([
     "ddrNavUrls",
@@ -355,6 +426,22 @@ document.getElementById("presetSelect").addEventListener("change", (event) => {
 });
 document.getElementById("addCombo").addEventListener("click", () => {
   document.getElementById("combosList").appendChild(createComboRow());
+});
+document.getElementById("exportSettings").addEventListener("click", () => {
+  exportSettingsJson();
+});
+document.getElementById("importSettings").addEventListener("click", () => {
+  document.getElementById("importFile").click();
+});
+document.getElementById("importFile").addEventListener("change", (event) => {
+  const input = event.target;
+  const file = input.files && input.files[0];
+  if (!file) return;
+  void importSettingsFromFile(file).catch(() => {
+    flashStatus("Import failed: invalid JSON file", 2200);
+  }).finally(() => {
+    input.value = "";
+  });
 });
 document.getElementById("save").addEventListener("click", () => {
   void save();

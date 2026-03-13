@@ -117,6 +117,16 @@ h2 {
   width: 120px;
 }
 
+.transfer {
+  margin-top: 14px;
+}
+
+.transfer-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .combo-row {
   display: grid;
   grid-template-columns: 1fr 1.5fr 1.2fr auto auto;
