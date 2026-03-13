@@ -9,6 +9,16 @@
     <h1>DDR Nav</h1>
     <p class="sub">Assign URLs to single arrows and optional arrow sequences, then Save.</p>
 
+    <section class="presets">
+      <label class="preset-field" for="presetSelect">
+        <span>Preset</span>
+        <select id="presetSelect"></select>
+      </label>
+      <p class="combos-sub">
+        <code>Preset 1</code> and <code>Preset 2</code> are saved permanently. Switch presets to load a different shortcut set.
+      </p>
+    </section>
+
     <div class="grid">
       <div class="field">
         <span>Left (←)</span>
@@ -73,6 +83,18 @@
       </label>
       <p class="combos-sub">
         Increase this to make combo entry more forgiving. Lower values make combos resolve faster.
+      </p>
+    </section>
+
+    <section class="transfer">
+      <h2>Backup</h2>
+      <div class="transfer-actions">
+        <button id="exportSettings" type="button" class="ghost">Export Presets (JSON)</button>
+        <button id="importSettings" type="button" class="ghost">Import Presets (JSON)</button>
+      </div>
+      <input id="importFile" type="file" accept=".json,application/json" hidden />
+      <p class="combos-sub">
+        Export includes both presets and your active preset selection.
       </p>
     </section>
 

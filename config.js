@@ -1,8 +1,19 @@
 const DIRECTIONS = ["left", "down", "up", "right"];
+const PRESETS = [
+  { id: "preset1", label: "Preset 1" },
+  { id: "preset2", label: "Preset 2" }
+];
+const PRESET_IDS = PRESETS.map((preset) => preset.id);
 const MAX_LABEL_LENGTH = 28;
 const DEFAULT_COMBO_WINDOW_MS = 600;
 const MIN_COMBO_WINDOW_MS = 200;
 const MAX_COMBO_WINDOW_MS = 10000;
+const EXPORT_FORMAT = "ddr-navigation-presets";
+const EXPORT_VERSION = 1;
+
+let presetState = null;
+let activePresetId = PRESET_IDS[0];
+let statusTimer = null;
 
 function normalizeSequence(value) {
   const cleaned = String(value || "")
@@ -56,6 +67,118 @@ function formatComboWindowSeconds(ms) {
   return (normalizeComboWindowMs(ms) / 1000).toFixed(1);
 }
 
+function getPresetLabel(presetId) {
+  return PRESETS.find((preset) => preset.id === presetId)?.label || presetId;
+}
+
+function makeTimestamp() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hour = String(d.getHours()).padStart(2, "0");
+  const minute = String(d.getMinutes()).padStart(2, "0");
+  const second = String(d.getSeconds()).padStart(2, "0");
+  return `${year}${month}${day}-${hour}${minute}${second}`;
+}
+
+function flashStatus(text, durationMs = 1800) {
+  const status = document.getElementById("status");
+  status.textContent = text;
+  if (statusTimer) clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => {
+    status.textContent = "";
+    statusTimer = null;
+  }, durationMs);
+}
+
+function emptyPreset() {
+  const urls = {};
+  for (const dir of DIRECTIONS) {
+    urls[dir] = "";
+  }
+
+  return {
+    urls,
+    names: {},
+    openInNewTabByKey: {},
+    comboWindowMs: DEFAULT_COMBO_WINDOW_MS
+  };
+}
+
+function hasPresetData(preset) {
+  return Object.values(preset.urls || {}).some(Boolean);
+}
+
+function normalizePreset(rawPreset) {
+  const base = emptyPreset();
+  const urls = rawPreset?.urls || {};
+  const names = rawPreset?.names || {};
+  const openInNewTabByKey = rawPreset?.openInNewTabByKey || {};
+
+  for (const [rawSequence, rawUrl] of Object.entries(urls)) {
+    const sequence = normalizeSequence(rawSequence);
+    const target = normalizeUrl(rawUrl);
+    if (!sequence || !target) continue;
+    base.urls[sequence] = target;
+  }
+
+  for (const [rawSequence, rawName] of Object.entries(names)) {
+    const sequence = normalizeSequence(rawSequence);
+    const nickname = normalizeNickname(rawName);
+    if (!sequence || !nickname || !base.urls[sequence]) continue;
+    base.names[sequence] = nickname;
+  }
+
+  for (const [rawSequence, rawFlag] of Object.entries(openInNewTabByKey)) {
+    const sequence = normalizeSequence(rawSequence);
+    if (!sequence || !base.urls[sequence] || !rawFlag) continue;
+    base.openInNewTabByKey[sequence] = true;
+  }
+
+  base.comboWindowMs = normalizeComboWindowMs(rawPreset?.comboWindowMs);
+  return base;
+}
+
+function buildLegacyPreset(data) {
+  return normalizePreset({
+    urls: data.ddrNavUrls || {},
+    names: data.ddrNavNames || {},
+    openInNewTabByKey: data.ddrNavOpenInNewTab || {},
+    comboWindowMs: data.ddrNavSettings?.comboWindowMs
+  });
+}
+
+function ensurePresetState(data) {
+  const legacyPreset = buildLegacyPreset(data);
+  const rawState = data.ddrNavPresetState || {};
+  const rawPresets = rawState.presets || {};
+  const presets = {};
+
+  for (const presetId of PRESET_IDS) {
+    if (rawPresets[presetId]) {
+      presets[presetId] = normalizePreset(rawPresets[presetId]);
+      continue;
+    }
+
+    if (presetId === "preset1" && hasPresetData(legacyPreset)) {
+      presets[presetId] = legacyPreset;
+      continue;
+    }
+
+    presets[presetId] = emptyPreset();
+  }
+
+  const selectedPresetId = PRESET_IDS.includes(rawState.activePresetId)
+    ? rawState.activePresetId
+    : PRESET_IDS[0];
+
+  return {
+    activePresetId: selectedPresetId,
+    presets
+  };
+}
+
 function createComboRow(sequence = "", url = "", nickname = "", openInNewTab = false) {
   const row = document.createElement("div");
   row.className = "combo-row";
@@ -79,61 +202,65 @@ function createComboRow(sequence = "", url = "", nickname = "", openInNewTab = f
   return row;
 }
 
-async function load() {
-  const data = await chrome.storage.sync.get(["ddrNavUrls", "ddrNavNames", "ddrNavOpenInNewTab", "ddrNavSettings"]);
-  const urls = data.ddrNavUrls || {};
-  const names = data.ddrNavNames || {};
-  const openInNewTabByKey = data.ddrNavOpenInNewTab || {};
-  const settings = data.ddrNavSettings || {};
-  const globalOpenInNewTab = Boolean(settings.openInNewTab);
-  const comboWindowMs = normalizeComboWindowMs(settings.comboWindowMs);
-  const combosList = document.getElementById("combosList");
-
-  combosList.innerHTML = "";
-
-  for (const k of DIRECTIONS) {
-    const target = urls[k] || "";
-    document.getElementById(k).value = target;
-    document.getElementById(`${k}-name`).value = names[k] || "";
-    document.getElementById(`${k}-newtab`).checked = Boolean(
-      openInNewTabByKey[k] ?? (globalOpenInNewTab && target)
-    );
-  }
-
-  for (const [rawSequence, rawUrl] of Object.entries(urls)) {
-    const sequence = normalizeSequence(rawSequence);
-    const url = String(rawUrl || "").trim();
-    const nickname = normalizeNickname(names[sequence] || names[rawSequence] || "");
-    const openInNewTab = Boolean(
-      openInNewTabByKey[sequence] ?? openInNewTabByKey[rawSequence] ?? (globalOpenInNewTab && url)
-    );
-    if (!sequence || !url) continue;
-    if (DIRECTIONS.includes(sequence)) continue;
-    combosList.appendChild(createComboRow(sequence, url, nickname, openInNewTab));
-  }
-
-  document.getElementById("comboWindowSeconds").value = formatComboWindowSeconds(comboWindowMs);
+function renderPresetSelect() {
+  const presetSelect = document.getElementById("presetSelect");
+  presetSelect.innerHTML = PRESETS
+    .map((preset) => `<option value="${preset.id}">${preset.label}</option>`)
+    .join("");
+  presetSelect.value = activePresetId;
 }
 
-async function save() {
+function getActivePreset() {
+  return presetState?.presets?.[activePresetId] || emptyPreset();
+}
+
+function loadPresetIntoForm(preset) {
+  const combosList = document.getElementById("combosList");
+  combosList.innerHTML = "";
+
+  for (const dir of DIRECTIONS) {
+    const target = preset.urls[dir] || "";
+    document.getElementById(dir).value = target;
+    document.getElementById(`${dir}-name`).value = preset.names[dir] || "";
+    document.getElementById(`${dir}-newtab`).checked = Boolean(preset.openInNewTabByKey[dir] && target);
+  }
+
+  const comboKeys = Object.keys(preset.urls)
+    .filter((sequence) => !DIRECTIONS.includes(sequence))
+    .sort();
+
+  for (const sequence of comboKeys) {
+    const target = preset.urls[sequence] || "";
+    if (!target) continue;
+    combosList.appendChild(
+      createComboRow(
+        sequence,
+        target,
+        preset.names[sequence] || "",
+        Boolean(preset.openInNewTabByKey[sequence])
+      )
+    );
+  }
+
+  document.getElementById("comboWindowSeconds").value = formatComboWindowSeconds(preset.comboWindowMs);
+}
+
+function collectPresetFromForm({ markInvalid = true } = {}) {
   const urls = {};
   const names = {};
   const openInNewTabByKey = {};
-  const comboWindowMs = parseComboWindowSeconds(document.getElementById("comboWindowSeconds").value);
-  for (const k of DIRECTIONS) {
-    const target = normalizeUrl(document.getElementById(k).value);
-    const nickname = normalizeNickname(document.getElementById(`${k}-name`).value);
-    const openInNewTab = document.getElementById(`${k}-newtab`).checked;
-    urls[k] = target;
-    if (target && nickname) {
-      names[k] = nickname;
-    }
-    if (target && openInNewTab) {
-      openInNewTabByKey[k] = true;
-    }
+  let invalidComboCount = 0;
+
+  for (const dir of DIRECTIONS) {
+    const target = normalizeUrl(document.getElementById(dir).value);
+    const nickname = normalizeNickname(document.getElementById(`${dir}-name`).value);
+    const openInNewTab = document.getElementById(`${dir}-newtab`).checked;
+
+    urls[dir] = target;
+    if (target && nickname) names[dir] = nickname;
+    if (target && openInNewTab) openInNewTabByKey[dir] = true;
   }
 
-  let invalidComboCount = 0;
   const rows = document.querySelectorAll(".combo-row");
   for (const row of rows) {
     const sequenceInput = row.querySelector(".combo-seq");
@@ -146,47 +273,177 @@ async function save() {
     const nickname = normalizeNickname(nameInput.value);
     const openInNewTab = Boolean(newTabInput?.checked);
 
-    sequenceInput.classList.remove("invalid");
+    if (markInvalid) sequenceInput.classList.remove("invalid");
 
     if (!rawSequence.trim() && !target) continue;
     if (!sequence) {
       invalidComboCount += 1;
-      sequenceInput.classList.add("invalid");
+      if (markInvalid) sequenceInput.classList.add("invalid");
       continue;
     }
     if (!target) continue;
     if (DIRECTIONS.includes(sequence)) continue;
 
     urls[sequence] = target;
-    if (nickname) {
-      names[sequence] = nickname;
-    }
-    if (openInNewTab) {
-      openInNewTabByKey[sequence] = true;
-    }
+    if (nickname) names[sequence] = nickname;
+    if (openInNewTab) openInNewTabByKey[sequence] = true;
   }
 
-  await chrome.storage.sync.set({
-    ddrNavUrls: urls,
-    ddrNavNames: names,
-    ddrNavOpenInNewTab: openInNewTabByKey,
-    ddrNavSettings: {
-      openInNewTab: false,
-      comboWindowMs
-    }
-  });
-
-  const status = document.getElementById("status");
-  if (invalidComboCount) {
-    status.textContent = `Saved ✓ (${invalidComboCount} invalid combo${invalidComboCount > 1 ? "s were" : " was"} skipped)`;
-  } else {
-    status.textContent = "Saved ✓";
-  }
-  setTimeout(() => (status.textContent = ""), 1800);
+  return {
+    preset: normalizePreset({
+      urls,
+      names,
+      openInNewTabByKey,
+      comboWindowMs: parseComboWindowSeconds(document.getElementById("comboWindowSeconds").value)
+    }),
+    invalidComboCount
+  };
 }
 
+async function persistPresetState() {
+  const activePreset = getActivePreset();
+
+  await chrome.storage.sync.set({
+    ddrNavPresetState: {
+      activePresetId,
+      presets: presetState.presets
+    },
+    ddrNavUrls: activePreset.urls,
+    ddrNavNames: activePreset.names,
+    ddrNavOpenInNewTab: activePreset.openInNewTabByKey,
+    ddrNavSettings: {
+      openInNewTab: false,
+      comboWindowMs: activePreset.comboWindowMs
+    }
+  });
+}
+
+function buildExportPayload() {
+  return {
+    format: EXPORT_FORMAT,
+    version: EXPORT_VERSION,
+    exportedAt: new Date().toISOString(),
+    data: {
+      activePresetId,
+      presets: presetState.presets
+    }
+  };
+}
+
+function syncActivePresetDraftFromForm() {
+  if (!presetState) return;
+  const draft = collectPresetFromForm({ markInvalid: false }).preset;
+  presetState.presets[activePresetId] = draft;
+}
+
+function exportSettingsJson() {
+  if (!presetState) return;
+  syncActivePresetDraftFromForm();
+
+  const payload = buildExportPayload();
+  const content = JSON.stringify(payload, null, 2);
+  const blob = new Blob([content], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `ddr-navigation-presets-${makeTimestamp()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  flashStatus("Exported presets ✓", 1400);
+}
+
+function normalizeImportedPresetState(raw) {
+  const state = raw?.data && raw?.format === EXPORT_FORMAT ? raw.data : raw;
+  if (!state || typeof state !== "object") {
+    throw new Error("Invalid preset file format");
+  }
+  return ensurePresetState({ ddrNavPresetState: state });
+}
+
+async function importSettingsFromFile(file) {
+  if (!file) return;
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+  const imported = normalizeImportedPresetState(parsed);
+
+  presetState = imported;
+  activePresetId = imported.activePresetId;
+  renderPresetSelect();
+  loadPresetIntoForm(getActivePreset());
+  await persistPresetState();
+  flashStatus("Imported presets ✓", 1600);
+}
+
+async function load() {
+  const data = await chrome.storage.sync.get([
+    "ddrNavUrls",
+    "ddrNavNames",
+    "ddrNavOpenInNewTab",
+    "ddrNavSettings",
+    "ddrNavPresetState"
+  ]);
+
+  presetState = ensurePresetState(data);
+  activePresetId = presetState.activePresetId;
+  renderPresetSelect();
+  loadPresetIntoForm(getActivePreset());
+
+  // Ensure migrated/new preset data is persisted.
+  await persistPresetState();
+}
+
+async function onPresetChange(nextPresetId) {
+  if (!PRESET_IDS.includes(nextPresetId) || nextPresetId === activePresetId) return;
+
+  // Keep current edits as the draft for the current preset before switching.
+  const currentDraft = collectPresetFromForm({ markInvalid: false }).preset;
+  presetState.presets[activePresetId] = currentDraft;
+
+  activePresetId = nextPresetId;
+  presetState.activePresetId = nextPresetId;
+  loadPresetIntoForm(getActivePreset());
+  await persistPresetState();
+  flashStatus(`Loaded ${getPresetLabel(nextPresetId)} ✓`, 1400);
+}
+
+async function save() {
+  const { preset, invalidComboCount } = collectPresetFromForm();
+  presetState.presets[activePresetId] = preset;
+  presetState.activePresetId = activePresetId;
+  await persistPresetState();
+
+  if (invalidComboCount) {
+    flashStatus(`Saved ✓ (${invalidComboCount} invalid combo${invalidComboCount > 1 ? "s were" : " was"} skipped)`);
+  } else {
+    flashStatus(`Saved ${getPresetLabel(activePresetId)} ✓`);
+  }
+}
+
+document.getElementById("presetSelect").addEventListener("change", (event) => {
+  void onPresetChange(event.target.value);
+});
 document.getElementById("addCombo").addEventListener("click", () => {
   document.getElementById("combosList").appendChild(createComboRow());
 });
-document.getElementById("save").addEventListener("click", save);
-load();
+document.getElementById("exportSettings").addEventListener("click", () => {
+  exportSettingsJson();
+});
+document.getElementById("importSettings").addEventListener("click", () => {
+  document.getElementById("importFile").click();
+});
+document.getElementById("importFile").addEventListener("change", (event) => {
+  const input = event.target;
+  const file = input.files && input.files[0];
+  if (!file) return;
+  void importSettingsFromFile(file).catch(() => {
+    flashStatus("Import failed: invalid JSON file", 2200);
+  }).finally(() => {
+    input.value = "";
+  });
+});
+document.getElementById("save").addEventListener("click", () => {
+  void save();
+});
+void load();
