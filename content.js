@@ -45,6 +45,7 @@
           ${directionalKeyImage("right")}
         </div>
       </div>
+      <div class="ddr-current-choice ddr-hidden" aria-live="polite"></div>
     </div>
   `;
 
@@ -95,6 +96,38 @@
       background: rgba(0,0,0,0.35);
       backdrop-filter: blur(6px);
       -webkit-backdrop-filter: blur(6px);
+    }
+    .ddr-current-choice{
+      min-height: 14px;
+      margin-top: 2px;
+      padding: 2px 6px;
+      text-align: center;
+      color: rgba(255,255,255,0.95);
+      font: 600 11px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      letter-spacing: 0.35px;
+      text-transform: uppercase;
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 120ms ease, transform 120ms ease;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.45);
+    }
+    .ddr-current-choice.ddr-loading{
+      color: transparent;
+      background:
+        linear-gradient(
+          90deg,
+          rgba(75,188,255,0.98) 0%,
+          rgba(75,188,255,0.98) calc(100% - var(--ddr-load-progress, 0%)),
+          rgba(105,255,198,0.98) calc(100% - var(--ddr-load-progress, 0%)),
+          rgba(105,255,198,0.98) 100%
+        );
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .ddr-current-choice.ddr-hidden{
+      opacity: 0;
+      transform: translateY(-2px);
     }
     .ddr-receptor{
       width: clamp(84px, 16vw, 122px);
@@ -157,6 +190,7 @@
   document.documentElement.appendChild(overlay);
   const comboWindowEl = overlay.querySelector(".ddr-combo-window");
   const comboWindowFillEl = overlay.querySelector(".ddr-combo-window-fill");
+  const currentChoiceEl = overlay.querySelector(".ddr-current-choice");
 
   // ---------- URL mappings ----------
   let rawUrls = {};
@@ -333,6 +367,7 @@
     if (needsRebuild) {
       rebuildBindings();
       renderChoices(state.sequence, false);
+      renderCurrentSequenceChoice();
     }
   });
 
@@ -351,15 +386,21 @@
     return state.meta && state.shift && state.y;
   }
 
+  function modifiersHeld() {
+    return state.meta && state.shift;
+  }
+
   function show() {
     overlay.classList.add("ddr-visible");
     renderChoices(state.sequence, false);
+    renderCurrentSequenceChoice();
   }
 
   function hide() {
     overlay.classList.remove("ddr-visible");
     overlay.querySelectorAll(".ddr-receptor").forEach((el) => el.classList.remove("ddr-active"));
     hideComboWindow();
+    setCurrentChoiceLabel("");
   }
 
   function clearSequenceTimer() {
@@ -381,6 +422,12 @@
     }
   }
 
+  function setCurrentChoiceProgress(progressRatio) {
+    if (!currentChoiceEl) return;
+    const ratio = Math.min(1, Math.max(0, Number(progressRatio) || 0));
+    currentChoiceEl.style.setProperty("--ddr-load-progress", `${(ratio * 100).toFixed(2)}%`);
+  }
+
   function startComboWindow(durationMs) {
     hideComboWindow();
     if (!comboWindowEl || !comboWindowFillEl || durationMs <= 0) return;
@@ -388,16 +435,19 @@
     comboWindowEl.classList.add("ddr-active");
     const startedAt = performance.now();
     comboWindowFillEl.style.transform = "scaleX(1)";
+    setCurrentChoiceProgress(0);
 
     const tick = (now) => {
       const elapsed = now - startedAt;
       const remaining = Math.max(0, durationMs - elapsed);
       const progress = remaining / durationMs;
       comboWindowFillEl.style.transform = `scaleX(${progress})`;
+      setCurrentChoiceProgress(1 - progress);
 
       if (remaining > 0) {
         comboWindowRafId = requestAnimationFrame(tick);
       } else {
+        setCurrentChoiceProgress(1);
         comboWindowRafId = null;
       }
     };
@@ -426,6 +476,35 @@
     state.sequence = [];
     clearSequenceTimer();
     clearReceptorHighlights();
+    setCurrentChoiceLabel("");
+  }
+
+  function setCurrentChoiceLabel(text) {
+    if (!currentChoiceEl) return;
+    const value = String(text || "").trim();
+    const loading = /^loading:/i.test(value);
+    currentChoiceEl.textContent = value;
+    currentChoiceEl.classList.toggle("ddr-hidden", !value);
+    currentChoiceEl.classList.toggle("ddr-loading", Boolean(value) && loading);
+    if (!loading) {
+      setCurrentChoiceProgress(0);
+    }
+  }
+
+  function renderCurrentSequenceChoice() {
+    if (!state.sequence.length) {
+      setCurrentChoiceLabel("");
+      return;
+    }
+
+    const sequenceKey = state.sequence.join(",");
+    const entry = bindings.get(sequenceKey);
+    if (entry?.url) {
+      setCurrentChoiceLabel(`Loading: ${getEntryLabel(entry)}`);
+      return;
+    }
+
+    setCurrentChoiceLabel(`Combo: ${sequenceKey.replace(/,/g, " + ")}`);
   }
 
   function activate(dir, target, openInNewTab = false) {
@@ -510,6 +589,7 @@
 
     setActiveReceptor(dir);
     renderChoices(state.sequence, true);
+    renderCurrentSequenceChoice();
 
     if (exactEntry?.url || hasLongerMatch) {
       scheduleResolution(sequenceKey);
@@ -548,13 +628,19 @@
         return;
       }
 
-      if (e.key === "Meta") state.meta = true;
-      if (e.key === "Shift") state.shift = true;
-      if (e.key && e.key.toLowerCase() === "y") state.y = true;
+      state.meta = e.metaKey;
+      state.shift = e.shiftKey;
+      if (!modifiersHeld()) state.y = false;
+      if (e.key && e.key.toLowerCase() === "y") {
+        state.y = true;
+      }
 
-      if (comboHeld()) show();
+      if (comboHeld()) {
+        show();
+      }
 
-      if (!comboHeld() || state.navigating) return;
+      const comboModeActive = modifiersHeld() && overlay.classList.contains("ddr-visible");
+      if (!comboModeActive || state.navigating) return;
 
       const dir = ARROW_KEY_TO_DIR[e.key];
       if (!dir) return;
@@ -578,11 +664,12 @@
   window.addEventListener(
     "keyup",
     (e) => {
-      if (e.key === "Meta") state.meta = false;
-      if (e.key === "Shift") state.shift = false;
+      state.meta = e.metaKey;
+      state.shift = e.shiftKey;
       if (e.key && e.key.toLowerCase() === "y") state.y = false;
+      if (!modifiersHeld()) state.y = false;
 
-      if (!comboHeld()) {
+      if (!modifiersHeld()) {
         finalizeSequence();
         if (!state.navigating) {
           clearSequence();
