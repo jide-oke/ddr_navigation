@@ -113,7 +113,37 @@
       transition: opacity 120ms ease, transform 120ms ease;
       text-shadow: 0 1px 2px rgba(0,0,0,0.45);
     }
+    .ddr-current-choice .ddr-prefix{
+      color: rgba(87,180,255,0.98);
+      -webkit-text-fill-color: currentColor;
+    }
+    .ddr-current-choice .ddr-value{
+      color: rgba(255,255,255,0.95);
+      margin-left: 6px;
+      -webkit-text-fill-color: currentColor;
+    }
     .ddr-current-choice.ddr-loading{
+      color: rgba(255,255,255,0.95);
+    }
+    .ddr-current-choice.ddr-loading .ddr-prefix{
+      color: transparent;
+      background: linear-gradient(
+        90deg,
+        rgba(87,180,255,0.98) 0%,
+        rgba(121,131,255,0.98) 18%,
+        rgba(196,108,255,0.98) 36%,
+        rgba(255,112,196,0.98) 54%,
+        rgba(255,164,96,0.98) 72%,
+        rgba(255,220,115,0.98) 86%,
+        rgba(126,242,172,0.98) 100%
+      );
+      background-size: 220% 100%;
+      background-position: calc((1 - var(--ddr-prefix-load-ratio-2x, var(--ddr-load-ratio-2x, 0))) * 180%) 0;
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .ddr-current-choice.ddr-loading .ddr-value{
       color: transparent;
       background: linear-gradient(
         90deg,
@@ -432,6 +462,7 @@
     if (!currentChoiceEl) return;
     const ratio = Math.min(1, Math.max(0, Number(progressRatio) || 0));
     const twoPassRatio = ratio >= 1 ? 1 : (ratio * 2) % 1;
+    currentChoiceEl.style.setProperty("--ddr-prefix-load-ratio-2x", twoPassRatio.toFixed(3));
     currentChoiceEl.style.setProperty("--ddr-load-ratio-2x", twoPassRatio.toFixed(3));
     currentChoiceEl.style.setProperty("--ddr-load-ratio", ratio.toFixed(3));
     currentChoiceEl.style.setProperty("--ddr-load-progress", `${(ratio * 100).toFixed(2)}%`);
@@ -491,8 +522,20 @@
   function setCurrentChoiceLabel(text) {
     if (!currentChoiceEl) return;
     const value = String(text || "").trim();
-    const loading = /^loading:/i.test(value) || /^next up!:/i.test(value);
-    currentChoiceEl.textContent = value;
+    const loadingMatch = value.match(/^(?:loading|next up!|nice!!\s*♡):\s*(.*)$/i);
+    const loading = Boolean(loadingMatch);
+    currentChoiceEl.textContent = "";
+    if (loadingMatch) {
+      const prefixEl = document.createElement("span");
+      prefixEl.className = "ddr-prefix";
+      prefixEl.textContent = "Nice!! ♡:";
+      const valueEl = document.createElement("span");
+      valueEl.className = "ddr-value";
+      valueEl.textContent = loadingMatch[1] || "";
+      currentChoiceEl.append(prefixEl, valueEl);
+    } else {
+      currentChoiceEl.textContent = value;
+    }
     currentChoiceEl.classList.toggle("ddr-hidden", !value);
     currentChoiceEl.classList.toggle("ddr-loading", Boolean(value) && loading);
     if (!loading) {
@@ -509,7 +552,7 @@
     const sequenceKey = state.sequence.join(",");
     const entry = bindings.get(sequenceKey);
     if (entry?.url) {
-      setCurrentChoiceLabel(`Next Up!: ${getEntryLabel(entry)}`);
+      setCurrentChoiceLabel(`Nice!! ♡: ${getEntryLabel(entry)}`);
       return;
     }
 
