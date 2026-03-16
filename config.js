@@ -657,6 +657,8 @@ document.getElementById("refreshStats").addEventListener("click", () => {
   void renderStats();
 });
 document.getElementById("resetStats").addEventListener("click", () => {
+  const confirmed = window.confirm("Are you sure? This will reset your stats.");
+  if (!confirmed) return;
   void resetStats();
 });
 document.getElementById("exportSettings").addEventListener("click", () => {

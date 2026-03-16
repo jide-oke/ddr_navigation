@@ -25,6 +25,8 @@
   };
   const COMMAND_IDS = new Set(Object.keys(COMMAND_LABELS));
   const STATS_STORAGE_KEY = "ddrNavStats";
+  const PREFIX_GRADIENT_RAINBOW = "linear-gradient(90deg, rgba(87,180,255,0.98) 0%, rgba(121,131,255,0.98) 18%, rgba(196,108,255,0.98) 36%, rgba(255,112,196,0.98) 54%, rgba(255,164,96,0.98) 72%, rgba(255,220,115,0.98) 86%, rgba(126,242,172,0.98) 100%)";
+  const PREFIX_GRADIENT_GREEN_TO_RED = "linear-gradient(90deg, rgba(105,255,198,0.98) 0%, rgba(154,255,124,0.98) 28%, rgba(255,228,112,0.98) 58%, rgba(255,168,102,0.98) 78%, rgba(255,92,92,0.98) 100%)";
 
   // ---------- Overlay ----------
   const overlay = document.createElement("div");
@@ -136,18 +138,9 @@
     }
     .ddr-current-choice.ddr-loading .ddr-prefix{
       color: transparent;
-      background: linear-gradient(
-        90deg,
-        rgba(87,180,255,0.98) 0%,
-        rgba(121,131,255,0.98) 18%,
-        rgba(196,108,255,0.98) 36%,
-        rgba(255,112,196,0.98) 54%,
-        rgba(255,164,96,0.98) 72%,
-        rgba(255,220,115,0.98) 86%,
-        rgba(126,242,172,0.98) 100%
-      );
+      background: var(--ddr-prefix-gradient, linear-gradient(90deg, rgba(87,180,255,0.98) 0%, rgba(121,131,255,0.98) 18%, rgba(196,108,255,0.98) 36%, rgba(255,112,196,0.98) 54%, rgba(255,164,96,0.98) 72%, rgba(255,220,115,0.98) 86%, rgba(126,242,172,0.98) 100%));
       background-size: 220% 100%;
-      background-position: calc((1 - var(--ddr-prefix-load-ratio-2x, var(--ddr-load-ratio-2x, 0))) * 180%) 0;
+      background-position: calc((1 - var(--ddr-prefix-load-ratio, var(--ddr-load-ratio-2x, 0))) * 180%) 0;
       background-clip: text;
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
@@ -535,8 +528,13 @@
   function setCurrentChoiceProgress(progressRatio) {
     if (!currentChoiceEl) return;
     const ratio = Math.min(1, Math.max(0, Number(progressRatio) || 0));
+    const prefixCycleCount = Math.max(
+      1,
+      Number(currentChoiceEl.style.getPropertyValue("--ddr-prefix-cycle-count")) || 2
+    );
+    const prefixRatio = ratio >= 1 ? 1 : (ratio * prefixCycleCount) % 1;
     const twoPassRatio = ratio >= 1 ? 1 : (ratio * 2) % 1;
-    currentChoiceEl.style.setProperty("--ddr-prefix-load-ratio-2x", twoPassRatio.toFixed(3));
+    currentChoiceEl.style.setProperty("--ddr-prefix-load-ratio", prefixRatio.toFixed(3));
     currentChoiceEl.style.setProperty("--ddr-load-ratio-2x", twoPassRatio.toFixed(3));
     currentChoiceEl.style.setProperty("--ddr-load-ratio", ratio.toFixed(3));
     currentChoiceEl.style.setProperty("--ddr-load-progress", `${(ratio * 100).toFixed(2)}%`);
@@ -593,22 +591,76 @@
     setCurrentChoiceLabel("");
   }
 
-  function setCurrentChoiceLabel(text) {
+  function getLoadingPrefixSettings(sequenceKey) {
+    const length = String(sequenceKey || "")
+      .split(",")
+      .filter(Boolean).length;
+    if (length <= 1) {
+      return {
+        prefix: "Good! ✧",
+        prefixCycles: 2,
+        prefixGradient: PREFIX_GRADIENT_RAINBOW
+      };
+    }
+    if (length === 2) {
+      return {
+        prefix: "Nice!! ♡",
+        prefixCycles: 4,
+        prefixGradient: PREFIX_GRADIENT_RAINBOW
+      };
+    }
+    if (length >= 3) {
+      return {
+        prefix: "Great!!! ⋆˙⟡ ♡",
+        prefixCycles: 10,
+        prefixGradient: PREFIX_GRADIENT_GREEN_TO_RED
+      };
+    }
+    return {
+      prefix: "Nice!! ♡",
+      prefixCycles: 2,
+      prefixGradient: PREFIX_GRADIENT_RAINBOW
+    };
+  }
+
+  function setLoadingChoiceLabel(sequenceKey, entry) {
+    if (!isActionableEntry(entry)) {
+      setCurrentChoiceLabel("");
+      return;
+    }
+    const label = getEntryLabel(entry);
+    if (!label) {
+      setCurrentChoiceLabel("");
+      return;
+    }
+    const { prefix, prefixCycles, prefixGradient } = getLoadingPrefixSettings(sequenceKey);
+    setCurrentChoiceLabel(`${prefix}: ${label}`, { loading: true, prefix, prefixCycles, prefixGradient });
+  }
+
+  function setCurrentChoiceLabel(text, options = {}) {
     if (!currentChoiceEl) return;
     const value = String(text || "").trim();
-    const loadingMatch = value.match(/^(?:loading|next up!|nice!!\s*♡):\s*(.*)$/i);
-    const loading = Boolean(loadingMatch);
+    const loading = Boolean(options.loading);
     currentChoiceEl.textContent = "";
-    if (loadingMatch) {
+    if (loading) {
+      const prefix = String(options.prefix || "Nice!! ♡").trim() || "Nice!! ♡";
+      const prefixCycles = Math.max(1, Number(options.prefixCycles) || 2);
+      const prefixGradient = String(options.prefixGradient || PREFIX_GRADIENT_RAINBOW);
+      const colonIndex = value.indexOf(":");
+      const suffix = colonIndex >= 0 ? value.slice(colonIndex + 1).trim() : value;
       const prefixEl = document.createElement("span");
       prefixEl.className = "ddr-prefix";
-      prefixEl.textContent = "Nice!! ♡:";
+      prefixEl.textContent = `${prefix}:`;
       const valueEl = document.createElement("span");
       valueEl.className = "ddr-value";
-      valueEl.textContent = loadingMatch[1] || "";
+      valueEl.textContent = suffix;
+      currentChoiceEl.style.setProperty("--ddr-prefix-cycle-count", String(prefixCycles));
+      currentChoiceEl.style.setProperty("--ddr-prefix-gradient", prefixGradient);
       currentChoiceEl.append(prefixEl, valueEl);
     } else {
       currentChoiceEl.textContent = value;
+      currentChoiceEl.style.setProperty("--ddr-prefix-cycle-count", "2");
+      currentChoiceEl.style.setProperty("--ddr-prefix-gradient", PREFIX_GRADIENT_RAINBOW);
     }
     currentChoiceEl.classList.toggle("ddr-hidden", !value);
     currentChoiceEl.classList.toggle("ddr-loading", Boolean(value) && loading);
@@ -626,7 +678,7 @@
     const sequenceKey = state.sequence.join(",");
     const entry = bindings.get(sequenceKey);
     if (isActionableEntry(entry)) {
-      setCurrentChoiceLabel(`Nice!! ♡: ${getEntryLabel(entry)}`);
+      setLoadingChoiceLabel(sequenceKey, entry);
       return;
     }
 
@@ -646,6 +698,9 @@
     clearSequenceTimer();
     clearNavigationTimer();
     setActiveReceptor(dir);
+    if (isActionableEntry(entry)) {
+      setLoadingChoiceLabel(sequenceKey, entry);
+    }
     trackComboUsage(sequenceKey, entry);
 
     // keep DDR feel: light up, then fade away; navigate after the flash
