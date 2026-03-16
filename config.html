@@ -7,105 +7,146 @@
   </head>
   <body>
     <h1>DDR Nav</h1>
-    <p class="sub">Assign URLs to single arrows and optional arrow sequences, then Save.</p>
+    <p class="sub">Assign URLs to single arrows, and URLs or tab commands to combo sequences, then Save.</p>
 
-    <section class="presets">
-      <label class="preset-field" for="presetSelect">
-        <span>Preset</span>
-        <select id="presetSelect"></select>
-      </label>
-      <p class="combos-sub">
-        <code>Preset 1</code> and <code>Preset 2</code> are saved permanently. Switch presets to load a different shortcut set.
-      </p>
-    </section>
-
-    <div class="grid">
-      <div class="field">
-        <span>Left (←)</span>
-        <input id="left" type="text" placeholder="https://example.com" />
-        <input id="left-name" type="text" placeholder="Nickname (optional)" />
-        <label class="inline-toggle">
-          <input id="left-newtab" type="checkbox" />
-          <span>Open in new tab</span>
-        </label>
-      </div>
-
-      <div class="field">
-        <span>Down (↓)</span>
-        <input id="down" type="text" placeholder="https://example.com" />
-        <input id="down-name" type="text" placeholder="Nickname (optional)" />
-        <label class="inline-toggle">
-          <input id="down-newtab" type="checkbox" />
-          <span>Open in new tab</span>
-        </label>
-      </div>
-
-      <div class="field">
-        <span>Up (↑)</span>
-        <input id="up" type="text" placeholder="https://example.com" />
-        <input id="up-name" type="text" placeholder="Nickname (optional)" />
-        <label class="inline-toggle">
-          <input id="up-newtab" type="checkbox" />
-          <span>Open in new tab</span>
-        </label>
-      </div>
-
-      <div class="field">
-        <span>Right (→)</span>
-        <input id="right" type="text" placeholder="https://example.com" />
-        <input id="right-name" type="text" placeholder="Nickname (optional)" />
-        <label class="inline-toggle">
-          <input id="right-newtab" type="checkbox" />
-          <span>Open in new tab</span>
-        </label>
-      </div>
+    <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+      <button id="tabMappings" class="tab-btn is-active" type="button" data-tab="mappings">Mappings</button>
+      <button id="tabStats" class="tab-btn" type="button" data-tab="stats">Stats</button>
     </div>
 
-    <section class="combos">
-      <div class="combos-header">
-        <h2>Combo shortcuts</h2>
-        <button id="addCombo" type="button" class="ghost">Add combo</button>
+    <section id="panelMappings" class="settings-panel">
+      <section class="presets">
+        <label class="preset-field" for="presetSelect">
+          <span>Preset</span>
+          <select id="presetSelect"></select>
+        </label>
+        <p class="combos-sub">
+          <code>Preset 1</code> and <code>Preset 2</code> are saved permanently. Switch presets to load a different shortcut set.
+        </p>
+      </section>
+
+      <div class="grid">
+        <div class="field">
+          <span>Left (←)</span>
+          <input id="left" type="text" placeholder="https://example.com" />
+          <input id="left-name" type="text" placeholder="Nickname (optional)" />
+          <label class="inline-toggle">
+            <input id="left-newtab" type="checkbox" />
+            <span>Open in new tab</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <span>Down (↓)</span>
+          <input id="down" type="text" placeholder="https://example.com" />
+          <input id="down-name" type="text" placeholder="Nickname (optional)" />
+          <label class="inline-toggle">
+            <input id="down-newtab" type="checkbox" />
+            <span>Open in new tab</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <span>Up (↑)</span>
+          <input id="up" type="text" placeholder="https://example.com" />
+          <input id="up-name" type="text" placeholder="Nickname (optional)" />
+          <label class="inline-toggle">
+            <input id="up-newtab" type="checkbox" />
+            <span>Open in new tab</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <span>Right (→)</span>
+          <input id="right" type="text" placeholder="https://example.com" />
+          <input id="right-name" type="text" placeholder="Nickname (optional)" />
+          <label class="inline-toggle">
+            <input id="right-newtab" type="checkbox" />
+            <span>Open in new tab</span>
+          </label>
+        </div>
       </div>
-      <p class="combos-sub">
-        Sequence examples: <code>left,left</code>, <code>up right down</code>, or arrow symbols like <code>← ←</code>.
-      </p>
-      <p class="combos-sub">
-        Tip: add a nickname so the rolodex shows a readable label instead of the URL.
-      </p>
-      <div id="combosList" class="combos-list"></div>
-    </section>
 
-    <section class="timing">
-      <h2>Timing</h2>
-      <label class="timing-field" for="comboWindowSeconds">
-        <span>Combo window (seconds)</span>
-        <input id="comboWindowSeconds" type="number" min="0.2" max="10" step="0.1" />
-      </label>
-      <p class="combos-sub">
-        Increase this to make combo entry more forgiving. Lower values make combos resolve faster.
-      </p>
-    </section>
+      <section class="combos">
+        <div class="combos-header">
+          <h2>Combo shortcuts</h2>
+          <button id="addCombo" type="button" class="ghost">Add combo</button>
+        </div>
+        <p class="combos-sub">
+          Sequence examples: <code>left,left</code>, <code>up right down</code>, or arrow symbols like <code>← ←</code>.
+        </p>
+        <p class="combos-sub">
+          Combo rows support either a URL or a built-in tab command. Add a nickname so the rolodex shows a readable label.
+        </p>
+        <div id="combosList" class="combos-list"></div>
+      </section>
 
-    <section class="transfer">
-      <h2>Backup</h2>
-      <div class="transfer-actions">
-        <button id="exportSettings" type="button" class="ghost">Export Presets (JSON)</button>
-        <button id="importSettings" type="button" class="ghost">Import Presets (JSON)</button>
+      <section class="timing">
+        <h2>Timing</h2>
+        <label class="timing-field" for="comboWindowSeconds">
+          <span>Combo window (seconds)</span>
+          <input id="comboWindowSeconds" type="number" min="0.2" max="10" step="0.1" />
+        </label>
+        <p class="combos-sub">
+          Increase this to make combo entry more forgiving. Lower values make combos resolve faster.
+        </p>
+      </section>
+
+      <section class="transfer">
+        <h2>Backup</h2>
+        <div class="transfer-actions">
+          <button id="exportSettings" type="button" class="ghost">Export Presets (JSON)</button>
+          <button id="importSettings" type="button" class="ghost">Import Presets (JSON)</button>
+        </div>
+        <input id="importFile" type="file" accept=".json,application/json" hidden />
+        <p class="combos-sub">
+          Export includes both presets and your active preset selection.
+        </p>
+      </section>
+
+      <div class="row">
+        <button id="save">Save</button>
+        <span id="status" class="status"></span>
       </div>
-      <input id="importFile" type="file" accept=".json,application/json" hidden />
-      <p class="combos-sub">
-        Export includes both presets and your active preset selection.
+
+      <p class="hint">
+        Usage: Hold <b>Cmd + Shift + Y</b>, then enter one or more arrow keys.
       </p>
     </section>
 
-    <div class="row">
-      <button id="save">Save</button>
-      <span id="status" class="status"></span>
-    </div>
+    <section id="panelStats" class="settings-panel" hidden>
+      <section class="stats-overview">
+        <div class="stats-card">
+          <span class="stats-label">Total Combo Uses</span>
+          <strong id="statsTotal" class="stats-total">0</strong>
+        </div>
+        <div class="transfer-actions">
+          <button id="refreshStats" type="button" class="ghost">Refresh Stats</button>
+          <button id="resetStats" type="button" class="ghost">Reset Stats</button>
+        </div>
+        <p class="combos-sub">
+          Stats are tracked locally on this browser profile.
+        </p>
+      </section>
 
-    <p class="hint">
-      Usage: Hold <b>Cmd + Shift + Y</b>, then enter one or more arrow keys.
-    </p>
+      <section class="stats-list-section">
+        <h2>Most Used Combos</h2>
+        <p id="statsEmpty" class="combos-sub" hidden>No combo activity yet.</p>
+        <div class="stats-table-wrap">
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th>Sequence</th>
+                <th>Label</th>
+                <th>Uses</th>
+                <th>Last Used</th>
+              </tr>
+            </thead>
+            <tbody id="statsRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
 
     <script src="config.js"></script>
   </body>

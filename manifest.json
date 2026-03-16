@@ -3,7 +3,7 @@
   "name": "DDR Navigation",
   "version": "1.0",
   "description": "Hold Cmd+Shift+Y then press an arrow to jump to a saved URL (DDR style).",
-  "permissions": ["storage"],
+  "permissions": ["storage", "tabs", "sessions"],
   "background": {
     "service_worker": "background.js"
   },

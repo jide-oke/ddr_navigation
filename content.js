@@ -16,6 +16,15 @@
   const MIN_COMBO_WINDOW_MS = 200;
   const MAX_COMBO_WINDOW_MS = 10000;
   const DISPLAY_LABEL_MAX_CHARS = 28;
+  const COMMAND_LABELS = {
+    close_other_tabs: "Close Other Tabs",
+    close_current_tab: "Close Current Tab",
+    reload_tab: "Reload Current Tab",
+    duplicate_tab: "Duplicate Current Tab",
+    reopen_closed_tabs: "Reopen Closed Tabs"
+  };
+  const COMMAND_IDS = new Set(Object.keys(COMMAND_LABELS));
+  const STATS_STORAGE_KEY = "ddrNavStats";
 
   // ---------- Overlay ----------
   const overlay = document.createElement("div");
@@ -230,6 +239,7 @@
 
   // ---------- URL mappings ----------
   let rawUrls = {};
+  let rawCommands = {};
   let rawNames = {};
   let rawOpenInNewTab = {};
   let legacyGlobalOpenInNewTab = false;
@@ -294,9 +304,22 @@
       const key = normalizeSequenceKey(rawKey);
       if (!key || !target) continue;
       nextBindings.set(key, {
-        url: target,
+        kind: "url",
+        value: target,
         label: normalizedNames.get(key) || "",
         openInNewTab: normalizedOpenInNewTab.has(key) || useLegacyGlobal
+      });
+    }
+
+    for (const [rawKey, rawCommand] of Object.entries(rawCommands)) {
+      const command = String(rawCommand || "").trim();
+      const key = normalizeSequenceKey(rawKey);
+      if (!key || !COMMAND_IDS.has(command)) continue;
+      nextBindings.set(key, {
+        kind: "command",
+        value: command,
+        label: normalizedNames.get(key) || "",
+        openInNewTab: false
       });
     }
 
@@ -333,7 +356,52 @@
   function getEntryLabel(entry) {
     if (!entry) return "";
     if (entry.label) return clipLabel(entry.label);
-    return formatTargetLabel(entry.url);
+    if (entry.kind === "command") {
+      return clipLabel(COMMAND_LABELS[entry.value] || entry.value || "");
+    }
+    return formatTargetLabel(entry.value);
+  }
+
+  function isActionableEntry(entry) {
+    if (!entry) return false;
+    if (entry.kind === "url") return Boolean(entry.value);
+    if (entry.kind === "command") return Boolean(entry.value);
+    return false;
+  }
+
+  function normalizeUsageStats(rawStats) {
+    const stats = rawStats && typeof rawStats === "object" ? rawStats : {};
+    const totalExecutions = Math.max(0, Number(stats.totalExecutions) || 0);
+    const bySequence = stats.bySequence && typeof stats.bySequence === "object" ? stats.bySequence : {};
+    return { totalExecutions, bySequence };
+  }
+
+  function trackComboUsage(sequenceKey, entry) {
+    const key = normalizeSequenceKey(sequenceKey);
+    if (!key || !isActionableEntry(entry)) return;
+
+    const label = getEntryLabel(entry);
+    chrome.storage.local.get([STATS_STORAGE_KEY], (data) => {
+      const stats = normalizeUsageStats(data?.[STATS_STORAGE_KEY]);
+      const bySequence = { ...stats.bySequence };
+      const prev = bySequence[key] && typeof bySequence[key] === "object" ? bySequence[key] : {};
+      const nextCount = Math.max(0, Number(prev.count) || 0) + 1;
+
+      bySequence[key] = {
+        count: nextCount,
+        lastUsedAt: new Date().toISOString(),
+        label: label || String(prev.label || ""),
+        kind: entry.kind || String(prev.kind || ""),
+        command: entry.kind === "command" ? entry.value : ""
+      };
+
+      chrome.storage.local.set({
+        [STATS_STORAGE_KEY]: {
+          totalExecutions: stats.totalExecutions + 1,
+          bySequence
+        }
+      });
+    });
   }
 
   function setChoiceLabel(dir, label, animate = false) {
@@ -364,11 +432,13 @@
   async function loadUrls() {
     const data = await chrome.storage.sync.get([
       "ddrNavUrls",
+      "ddrNavCommands",
       "ddrNavNames",
       "ddrNavOpenInNewTab",
       "ddrNavSettings"
     ]);
     rawUrls = { ...(data.ddrNavUrls || {}) };
+    rawCommands = { ...(data.ddrNavCommands || {}) };
     rawNames = { ...(data.ddrNavNames || {}) };
     rawOpenInNewTab = { ...(data.ddrNavOpenInNewTab || {}) };
     legacyGlobalOpenInNewTab = Boolean(data.ddrNavSettings?.openInNewTab);
@@ -384,6 +454,10 @@
     let needsRebuild = false;
     if (changes.ddrNavUrls) {
       rawUrls = { ...(changes.ddrNavUrls.newValue || {}) };
+      needsRebuild = true;
+    }
+    if (changes.ddrNavCommands) {
+      rawCommands = { ...(changes.ddrNavCommands.newValue || {}) };
       needsRebuild = true;
     }
     if (changes.ddrNavNames) {
@@ -551,7 +625,7 @@
 
     const sequenceKey = state.sequence.join(",");
     const entry = bindings.get(sequenceKey);
-    if (entry?.url) {
+    if (isActionableEntry(entry)) {
       setCurrentChoiceLabel(`Nice!! ♡: ${getEntryLabel(entry)}`);
       return;
     }
@@ -559,11 +633,20 @@
     setCurrentChoiceLabel(`Combo: ${sequenceKey.replace(/,/g, " + ")}`);
   }
 
-  function activate(dir, target, openInNewTab = false) {
+  function runCommand(command) {
+    if (!command) return;
+    chrome.runtime.sendMessage({ type: "ddr-run-command", command }, () => {
+      // Ignore command failures in the content layer; background reports best-effort execution.
+      void chrome.runtime.lastError;
+    });
+  }
+
+  function activate(sequenceKey, dir, entry) {
     state.navigating = true;
     clearSequenceTimer();
     clearNavigationTimer();
     setActiveReceptor(dir);
+    trackComboUsage(sequenceKey, entry);
 
     // keep DDR feel: light up, then fade away; navigate after the flash
     state.navigationTimer = setTimeout(() => {
@@ -572,16 +655,22 @@
       state.navigating = false;
       clearSequence();
 
-      if (target) {
-        if (openInNewTab) {
-          chrome.runtime.sendMessage({ type: "ddr-open-url-new-tab", url: target }, (response) => {
-            if (chrome.runtime.lastError || !response?.ok) {
-              window.location.assign(target);
-            }
-          });
-        } else {
-          window.location.assign(target);
-        }
+      if (!isActionableEntry(entry)) return;
+
+      if (entry.kind === "command") {
+        runCommand(entry.value);
+        return;
+      }
+
+      const target = entry.value;
+      if (entry.openInNewTab) {
+        chrome.runtime.sendMessage({ type: "ddr-open-url-new-tab", url: target }, (response) => {
+          if (chrome.runtime.lastError || !response?.ok) {
+            window.location.assign(target);
+          }
+        });
+      } else {
+        window.location.assign(target);
       }
     }, 350);
   }
@@ -594,9 +683,9 @@
     if (!sequenceKey) return;
 
     const entry = bindings.get(sequenceKey);
-    if (entry?.url) {
+    if (isActionableEntry(entry)) {
       const parts = sequenceKey.split(",");
-      activate(parts[parts.length - 1], entry.url, entry.openInNewTab);
+      activate(sequenceKey, parts[parts.length - 1], entry);
       return;
     }
 
@@ -613,9 +702,9 @@
       if (state.sequence.join(",") !== sequenceKey) return;
 
       const entry = bindings.get(sequenceKey);
-      if (entry?.url) {
+      if (isActionableEntry(entry)) {
         const parts = sequenceKey.split(",");
-        activate(parts[parts.length - 1], entry.url, entry.openInNewTab);
+        activate(sequenceKey, parts[parts.length - 1], entry);
         return;
       }
 
@@ -634,8 +723,8 @@
     const exactEntry = bindings.get(sequenceKey);
     const hasLongerMatch = prefixes.has(sequenceKey);
 
-    if (exactEntry?.url && !hasLongerMatch) {
-      activate(dir, exactEntry.url, exactEntry.openInNewTab);
+    if (isActionableEntry(exactEntry) && !hasLongerMatch) {
+      activate(sequenceKey, dir, exactEntry);
       return;
     }
 
@@ -643,7 +732,7 @@
     renderChoices(state.sequence, true);
     renderCurrentSequenceChoice();
 
-    if (exactEntry?.url || hasLongerMatch) {
+    if (isActionableEntry(exactEntry) || hasLongerMatch) {
       scheduleResolution(sequenceKey);
       return;
     }
