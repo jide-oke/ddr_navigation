@@ -491,7 +491,7 @@
   function setCurrentChoiceLabel(text) {
     if (!currentChoiceEl) return;
     const value = String(text || "").trim();
-    const loading = /^loading:/i.test(value);
+    const loading = /^loading:/i.test(value) || /^next up!:/i.test(value);
     currentChoiceEl.textContent = value;
     currentChoiceEl.classList.toggle("ddr-hidden", !value);
     currentChoiceEl.classList.toggle("ddr-loading", Boolean(value) && loading);
@@ -509,7 +509,7 @@
     const sequenceKey = state.sequence.join(",");
     const entry = bindings.get(sequenceKey);
     if (entry?.url) {
-      setCurrentChoiceLabel(`Loading: ${getEntryLabel(entry)}`);
+      setCurrentChoiceLabel(`Next Up!: ${getEntryLabel(entry)}`);
       return;
     }
 
