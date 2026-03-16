@@ -98,13 +98,13 @@
       -webkit-backdrop-filter: blur(6px);
     }
     .ddr-current-choice{
-      min-height: 14px;
-      margin-top: 2px;
+      min-height: 20px;
+      margin-top: 4px;
       padding: 2px 6px;
       text-align: center;
       color: rgba(255,255,255,0.95);
-      font: 600 11px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-      letter-spacing: 0.35px;
+      font: 700 14px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      letter-spacing: 0.6px;
       text-transform: uppercase;
       opacity: 1;
       transform: translateY(0);
@@ -113,14 +113,18 @@
     }
     .ddr-current-choice.ddr-loading{
       color: transparent;
-      background:
-        linear-gradient(
-          90deg,
-          rgba(75,188,255,0.98) 0%,
-          rgba(75,188,255,0.98) calc(100% - var(--ddr-load-progress, 0%)),
-          rgba(105,255,198,0.98) calc(100% - var(--ddr-load-progress, 0%)),
-          rgba(105,255,198,0.98) 100%
-        );
+      background: linear-gradient(
+        90deg,
+        rgba(87,180,255,0.98) 0%,
+        rgba(121,131,255,0.98) 18%,
+        rgba(196,108,255,0.98) 36%,
+        rgba(255,112,196,0.98) 54%,
+        rgba(255,164,96,0.98) 72%,
+        rgba(255,220,115,0.98) 86%,
+        rgba(126,242,172,0.98) 100%
+      );
+      background-size: 220% 100%;
+      background-position: calc((1 - var(--ddr-load-ratio-2x, 0)) * 180%) 0;
       background-clip: text;
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
@@ -425,6 +429,9 @@
   function setCurrentChoiceProgress(progressRatio) {
     if (!currentChoiceEl) return;
     const ratio = Math.min(1, Math.max(0, Number(progressRatio) || 0));
+    const twoPassRatio = ratio >= 1 ? 1 : (ratio * 2) % 1;
+    currentChoiceEl.style.setProperty("--ddr-load-ratio-2x", twoPassRatio.toFixed(3));
+    currentChoiceEl.style.setProperty("--ddr-load-ratio", ratio.toFixed(3));
     currentChoiceEl.style.setProperty("--ddr-load-progress", `${(ratio * 100).toFixed(2)}%`);
   }
 
