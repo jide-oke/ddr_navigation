@@ -103,9 +103,11 @@
       padding: 2px 6px;
       text-align: center;
       color: rgba(255,255,255,0.95);
-      font: 700 14px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      font: 700 28px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
       letter-spacing: 0.6px;
       text-transform: uppercase;
+      -webkit-text-stroke: 2px rgba(0,0,0,0.98);
+      paint-order: stroke fill;
       opacity: 1;
       transform: translateY(0);
       transition: opacity 120ms ease, transform 120ms ease;
