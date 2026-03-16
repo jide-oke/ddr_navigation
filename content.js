@@ -16,6 +16,17 @@
   const MIN_COMBO_WINDOW_MS = 200;
   const MAX_COMBO_WINDOW_MS = 10000;
   const DISPLAY_LABEL_MAX_CHARS = 28;
+  const COMMAND_LABELS = {
+    close_other_tabs: "Close Other Tabs",
+    close_current_tab: "Close Current Tab",
+    reload_tab: "Reload Current Tab",
+    duplicate_tab: "Duplicate Current Tab",
+    reopen_closed_tabs: "Reopen Closed Tabs"
+  };
+  const COMMAND_IDS = new Set(Object.keys(COMMAND_LABELS));
+  const STATS_STORAGE_KEY = "ddrNavStats";
+  const PREFIX_GRADIENT_RAINBOW = "linear-gradient(90deg, rgba(87,180,255,0.98) 0%, rgba(121,131,255,0.98) 18%, rgba(196,108,255,0.98) 36%, rgba(255,112,196,0.98) 54%, rgba(255,164,96,0.98) 72%, rgba(255,220,115,0.98) 86%, rgba(126,242,172,0.98) 100%)";
+  const PREFIX_GRADIENT_GREEN_TO_RED = "linear-gradient(90deg, rgba(105,255,198,0.98) 0%, rgba(154,255,124,0.98) 28%, rgba(255,228,112,0.98) 58%, rgba(255,168,102,0.98) 78%, rgba(255,92,92,0.98) 100%)";
 
   // ---------- Overlay ----------
   const overlay = document.createElement("div");
@@ -127,18 +138,9 @@
     }
     .ddr-current-choice.ddr-loading .ddr-prefix{
       color: transparent;
-      background: linear-gradient(
-        90deg,
-        rgba(87,180,255,0.98) 0%,
-        rgba(121,131,255,0.98) 18%,
-        rgba(196,108,255,0.98) 36%,
-        rgba(255,112,196,0.98) 54%,
-        rgba(255,164,96,0.98) 72%,
-        rgba(255,220,115,0.98) 86%,
-        rgba(126,242,172,0.98) 100%
-      );
+      background: var(--ddr-prefix-gradient, linear-gradient(90deg, rgba(87,180,255,0.98) 0%, rgba(121,131,255,0.98) 18%, rgba(196,108,255,0.98) 36%, rgba(255,112,196,0.98) 54%, rgba(255,164,96,0.98) 72%, rgba(255,220,115,0.98) 86%, rgba(126,242,172,0.98) 100%));
       background-size: 220% 100%;
-      background-position: calc((1 - var(--ddr-prefix-load-ratio-2x, var(--ddr-load-ratio-2x, 0))) * 180%) 0;
+      background-position: calc((1 - var(--ddr-prefix-load-ratio, var(--ddr-load-ratio-2x, 0))) * 180%) 0;
       background-clip: text;
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
@@ -230,6 +232,7 @@
 
   // ---------- URL mappings ----------
   let rawUrls = {};
+  let rawCommands = {};
   let rawNames = {};
   let rawOpenInNewTab = {};
   let legacyGlobalOpenInNewTab = false;
@@ -294,9 +297,22 @@
       const key = normalizeSequenceKey(rawKey);
       if (!key || !target) continue;
       nextBindings.set(key, {
-        url: target,
+        kind: "url",
+        value: target,
         label: normalizedNames.get(key) || "",
         openInNewTab: normalizedOpenInNewTab.has(key) || useLegacyGlobal
+      });
+    }
+
+    for (const [rawKey, rawCommand] of Object.entries(rawCommands)) {
+      const command = String(rawCommand || "").trim();
+      const key = normalizeSequenceKey(rawKey);
+      if (!key || !COMMAND_IDS.has(command)) continue;
+      nextBindings.set(key, {
+        kind: "command",
+        value: command,
+        label: normalizedNames.get(key) || "",
+        openInNewTab: false
       });
     }
 
@@ -333,7 +349,52 @@
   function getEntryLabel(entry) {
     if (!entry) return "";
     if (entry.label) return clipLabel(entry.label);
-    return formatTargetLabel(entry.url);
+    if (entry.kind === "command") {
+      return clipLabel(COMMAND_LABELS[entry.value] || entry.value || "");
+    }
+    return formatTargetLabel(entry.value);
+  }
+
+  function isActionableEntry(entry) {
+    if (!entry) return false;
+    if (entry.kind === "url") return Boolean(entry.value);
+    if (entry.kind === "command") return Boolean(entry.value);
+    return false;
+  }
+
+  function normalizeUsageStats(rawStats) {
+    const stats = rawStats && typeof rawStats === "object" ? rawStats : {};
+    const totalExecutions = Math.max(0, Number(stats.totalExecutions) || 0);
+    const bySequence = stats.bySequence && typeof stats.bySequence === "object" ? stats.bySequence : {};
+    return { totalExecutions, bySequence };
+  }
+
+  function trackComboUsage(sequenceKey, entry) {
+    const key = normalizeSequenceKey(sequenceKey);
+    if (!key || !isActionableEntry(entry)) return;
+
+    const label = getEntryLabel(entry);
+    chrome.storage.local.get([STATS_STORAGE_KEY], (data) => {
+      const stats = normalizeUsageStats(data?.[STATS_STORAGE_KEY]);
+      const bySequence = { ...stats.bySequence };
+      const prev = bySequence[key] && typeof bySequence[key] === "object" ? bySequence[key] : {};
+      const nextCount = Math.max(0, Number(prev.count) || 0) + 1;
+
+      bySequence[key] = {
+        count: nextCount,
+        lastUsedAt: new Date().toISOString(),
+        label: label || String(prev.label || ""),
+        kind: entry.kind || String(prev.kind || ""),
+        command: entry.kind === "command" ? entry.value : ""
+      };
+
+      chrome.storage.local.set({
+        [STATS_STORAGE_KEY]: {
+          totalExecutions: stats.totalExecutions + 1,
+          bySequence
+        }
+      });
+    });
   }
 
   function setChoiceLabel(dir, label, animate = false) {
@@ -364,11 +425,13 @@
   async function loadUrls() {
     const data = await chrome.storage.sync.get([
       "ddrNavUrls",
+      "ddrNavCommands",
       "ddrNavNames",
       "ddrNavOpenInNewTab",
       "ddrNavSettings"
     ]);
     rawUrls = { ...(data.ddrNavUrls || {}) };
+    rawCommands = { ...(data.ddrNavCommands || {}) };
     rawNames = { ...(data.ddrNavNames || {}) };
     rawOpenInNewTab = { ...(data.ddrNavOpenInNewTab || {}) };
     legacyGlobalOpenInNewTab = Boolean(data.ddrNavSettings?.openInNewTab);
@@ -384,6 +447,10 @@
     let needsRebuild = false;
     if (changes.ddrNavUrls) {
       rawUrls = { ...(changes.ddrNavUrls.newValue || {}) };
+      needsRebuild = true;
+    }
+    if (changes.ddrNavCommands) {
+      rawCommands = { ...(changes.ddrNavCommands.newValue || {}) };
       needsRebuild = true;
     }
     if (changes.ddrNavNames) {
@@ -461,8 +528,13 @@
   function setCurrentChoiceProgress(progressRatio) {
     if (!currentChoiceEl) return;
     const ratio = Math.min(1, Math.max(0, Number(progressRatio) || 0));
+    const prefixCycleCount = Math.max(
+      1,
+      Number(currentChoiceEl.style.getPropertyValue("--ddr-prefix-cycle-count")) || 2
+    );
+    const prefixRatio = ratio >= 1 ? 1 : (ratio * prefixCycleCount) % 1;
     const twoPassRatio = ratio >= 1 ? 1 : (ratio * 2) % 1;
-    currentChoiceEl.style.setProperty("--ddr-prefix-load-ratio-2x", twoPassRatio.toFixed(3));
+    currentChoiceEl.style.setProperty("--ddr-prefix-load-ratio", prefixRatio.toFixed(3));
     currentChoiceEl.style.setProperty("--ddr-load-ratio-2x", twoPassRatio.toFixed(3));
     currentChoiceEl.style.setProperty("--ddr-load-ratio", ratio.toFixed(3));
     currentChoiceEl.style.setProperty("--ddr-load-progress", `${(ratio * 100).toFixed(2)}%`);
@@ -519,22 +591,76 @@
     setCurrentChoiceLabel("");
   }
 
-  function setCurrentChoiceLabel(text) {
+  function getLoadingPrefixSettings(sequenceKey) {
+    const length = String(sequenceKey || "")
+      .split(",")
+      .filter(Boolean).length;
+    if (length <= 1) {
+      return {
+        prefix: "Good! ✧",
+        prefixCycles: 2,
+        prefixGradient: PREFIX_GRADIENT_RAINBOW
+      };
+    }
+    if (length === 2) {
+      return {
+        prefix: "Nice!! ♡",
+        prefixCycles: 4,
+        prefixGradient: PREFIX_GRADIENT_RAINBOW
+      };
+    }
+    if (length >= 3) {
+      return {
+        prefix: "Great!!! ⋆˙⟡ ♡",
+        prefixCycles: 10,
+        prefixGradient: PREFIX_GRADIENT_GREEN_TO_RED
+      };
+    }
+    return {
+      prefix: "Nice!! ♡",
+      prefixCycles: 2,
+      prefixGradient: PREFIX_GRADIENT_RAINBOW
+    };
+  }
+
+  function setLoadingChoiceLabel(sequenceKey, entry) {
+    if (!isActionableEntry(entry)) {
+      setCurrentChoiceLabel("");
+      return;
+    }
+    const label = getEntryLabel(entry);
+    if (!label) {
+      setCurrentChoiceLabel("");
+      return;
+    }
+    const { prefix, prefixCycles, prefixGradient } = getLoadingPrefixSettings(sequenceKey);
+    setCurrentChoiceLabel(`${prefix}: ${label}`, { loading: true, prefix, prefixCycles, prefixGradient });
+  }
+
+  function setCurrentChoiceLabel(text, options = {}) {
     if (!currentChoiceEl) return;
     const value = String(text || "").trim();
-    const loadingMatch = value.match(/^(?:loading|next up!|nice!!\s*♡):\s*(.*)$/i);
-    const loading = Boolean(loadingMatch);
+    const loading = Boolean(options.loading);
     currentChoiceEl.textContent = "";
-    if (loadingMatch) {
+    if (loading) {
+      const prefix = String(options.prefix || "Nice!! ♡").trim() || "Nice!! ♡";
+      const prefixCycles = Math.max(1, Number(options.prefixCycles) || 2);
+      const prefixGradient = String(options.prefixGradient || PREFIX_GRADIENT_RAINBOW);
+      const colonIndex = value.indexOf(":");
+      const suffix = colonIndex >= 0 ? value.slice(colonIndex + 1).trim() : value;
       const prefixEl = document.createElement("span");
       prefixEl.className = "ddr-prefix";
-      prefixEl.textContent = "Nice!! ♡:";
+      prefixEl.textContent = `${prefix}:`;
       const valueEl = document.createElement("span");
       valueEl.className = "ddr-value";
-      valueEl.textContent = loadingMatch[1] || "";
+      valueEl.textContent = suffix;
+      currentChoiceEl.style.setProperty("--ddr-prefix-cycle-count", String(prefixCycles));
+      currentChoiceEl.style.setProperty("--ddr-prefix-gradient", prefixGradient);
       currentChoiceEl.append(prefixEl, valueEl);
     } else {
       currentChoiceEl.textContent = value;
+      currentChoiceEl.style.setProperty("--ddr-prefix-cycle-count", "2");
+      currentChoiceEl.style.setProperty("--ddr-prefix-gradient", PREFIX_GRADIENT_RAINBOW);
     }
     currentChoiceEl.classList.toggle("ddr-hidden", !value);
     currentChoiceEl.classList.toggle("ddr-loading", Boolean(value) && loading);
@@ -551,19 +677,31 @@
 
     const sequenceKey = state.sequence.join(",");
     const entry = bindings.get(sequenceKey);
-    if (entry?.url) {
-      setCurrentChoiceLabel(`Nice!! ♡: ${getEntryLabel(entry)}`);
+    if (isActionableEntry(entry)) {
+      setLoadingChoiceLabel(sequenceKey, entry);
       return;
     }
 
     setCurrentChoiceLabel(`Combo: ${sequenceKey.replace(/,/g, " + ")}`);
   }
 
-  function activate(dir, target, openInNewTab = false) {
+  function runCommand(command) {
+    if (!command) return;
+    chrome.runtime.sendMessage({ type: "ddr-run-command", command }, () => {
+      // Ignore command failures in the content layer; background reports best-effort execution.
+      void chrome.runtime.lastError;
+    });
+  }
+
+  function activate(sequenceKey, dir, entry) {
     state.navigating = true;
     clearSequenceTimer();
     clearNavigationTimer();
     setActiveReceptor(dir);
+    if (isActionableEntry(entry)) {
+      setLoadingChoiceLabel(sequenceKey, entry);
+    }
+    trackComboUsage(sequenceKey, entry);
 
     // keep DDR feel: light up, then fade away; navigate after the flash
     state.navigationTimer = setTimeout(() => {
@@ -572,16 +710,22 @@
       state.navigating = false;
       clearSequence();
 
-      if (target) {
-        if (openInNewTab) {
-          chrome.runtime.sendMessage({ type: "ddr-open-url-new-tab", url: target }, (response) => {
-            if (chrome.runtime.lastError || !response?.ok) {
-              window.location.assign(target);
-            }
-          });
-        } else {
-          window.location.assign(target);
-        }
+      if (!isActionableEntry(entry)) return;
+
+      if (entry.kind === "command") {
+        runCommand(entry.value);
+        return;
+      }
+
+      const target = entry.value;
+      if (entry.openInNewTab) {
+        chrome.runtime.sendMessage({ type: "ddr-open-url-new-tab", url: target }, (response) => {
+          if (chrome.runtime.lastError || !response?.ok) {
+            window.location.assign(target);
+          }
+        });
+      } else {
+        window.location.assign(target);
       }
     }, 350);
   }
@@ -594,9 +738,9 @@
     if (!sequenceKey) return;
 
     const entry = bindings.get(sequenceKey);
-    if (entry?.url) {
+    if (isActionableEntry(entry)) {
       const parts = sequenceKey.split(",");
-      activate(parts[parts.length - 1], entry.url, entry.openInNewTab);
+      activate(sequenceKey, parts[parts.length - 1], entry);
       return;
     }
 
@@ -613,9 +757,9 @@
       if (state.sequence.join(",") !== sequenceKey) return;
 
       const entry = bindings.get(sequenceKey);
-      if (entry?.url) {
+      if (isActionableEntry(entry)) {
         const parts = sequenceKey.split(",");
-        activate(parts[parts.length - 1], entry.url, entry.openInNewTab);
+        activate(sequenceKey, parts[parts.length - 1], entry);
         return;
       }
 
@@ -634,8 +778,8 @@
     const exactEntry = bindings.get(sequenceKey);
     const hasLongerMatch = prefixes.has(sequenceKey);
 
-    if (exactEntry?.url && !hasLongerMatch) {
-      activate(dir, exactEntry.url, exactEntry.openInNewTab);
+    if (isActionableEntry(exactEntry) && !hasLongerMatch) {
+      activate(sequenceKey, dir, exactEntry);
       return;
     }
 
@@ -643,7 +787,7 @@
     renderChoices(state.sequence, true);
     renderCurrentSequenceChoice();
 
-    if (exactEntry?.url || hasLongerMatch) {
+    if (isActionableEntry(exactEntry) || hasLongerMatch) {
       scheduleResolution(sequenceKey);
       return;
     }

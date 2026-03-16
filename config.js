@@ -4,15 +4,31 @@ const PRESETS = [
   { id: "preset2", label: "Preset 2" }
 ];
 const PRESET_IDS = PRESETS.map((preset) => preset.id);
+const ACTION_TYPES = {
+  URL: "url",
+  COMMAND: "command"
+};
+const COMMAND_OPTIONS = [
+  { id: "close_other_tabs", label: "Close Other Tabs" },
+  { id: "close_current_tab", label: "Close Current Tab" },
+  { id: "reload_tab", label: "Reload Current Tab" },
+  { id: "duplicate_tab", label: "Duplicate Current Tab" },
+  { id: "reopen_closed_tabs", label: "Reopen Closed Tabs" }
+];
+const COMMAND_IDS = new Set(COMMAND_OPTIONS.map((command) => command.id));
 const MAX_LABEL_LENGTH = 28;
 const DEFAULT_COMBO_WINDOW_MS = 600;
 const MIN_COMBO_WINDOW_MS = 200;
 const MAX_COMBO_WINDOW_MS = 10000;
 const EXPORT_FORMAT = "ddr-navigation-presets";
-const EXPORT_VERSION = 1;
+const EXPORT_VERSION = 2;
+const STATS_STORAGE_KEY = "ddrNavStats";
+const STATS_TABLE_LIMIT = 30;
+const COMMAND_LABEL_BY_ID = Object.fromEntries(COMMAND_OPTIONS.map((command) => [command.id, command.label]));
 
 let presetState = null;
 let activePresetId = PRESET_IDS[0];
+let activeSettingsTab = "mappings";
 let statusTimer = null;
 
 function normalizeSequence(value) {
@@ -92,6 +108,139 @@ function flashStatus(text, durationMs = 1800) {
   }, durationMs);
 }
 
+function emptyStats() {
+  return {
+    totalExecutions: 0,
+    bySequence: {}
+  };
+}
+
+function normalizeStats(rawStats) {
+  const stats = rawStats && typeof rawStats === "object" ? rawStats : {};
+  const bySequenceRaw = stats.bySequence && typeof stats.bySequence === "object" ? stats.bySequence : {};
+  const bySequence = {};
+  let derivedTotal = 0;
+
+  for (const [rawSequence, rawEntry] of Object.entries(bySequenceRaw)) {
+    const sequence = normalizeSequence(rawSequence);
+    if (!sequence) continue;
+    const count = Math.max(0, Number(rawEntry?.count) || 0);
+    if (!count) continue;
+    const label = normalizeNickname(rawEntry?.label || "");
+    const lastUsedAt = typeof rawEntry?.lastUsedAt === "string" ? rawEntry.lastUsedAt : "";
+    bySequence[sequence] = { count, label, lastUsedAt };
+    derivedTotal += count;
+  }
+
+  const storedTotal = Math.max(0, Number(stats.totalExecutions) || 0);
+  return {
+    totalExecutions: Math.max(storedTotal, derivedTotal),
+    bySequence
+  };
+}
+
+function formatSequenceForDisplay(sequence) {
+  return sequence.split(",").join(" + ").toUpperCase();
+}
+
+function formatLastUsed(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString();
+}
+
+function getStatsEntryLabel(sequence, entry) {
+  const preferred = normalizeNickname(entry?.label || "");
+  if (preferred) return preferred;
+
+  const preset = getActivePreset();
+  const presetName = normalizeNickname(preset.names?.[sequence] || "");
+  if (presetName) return presetName;
+
+  const commandId = preset.commands?.[sequence];
+  if (commandId) return COMMAND_LABEL_BY_ID[commandId] || commandId;
+
+  const url = preset.urls?.[sequence] || "";
+  return url || "—";
+}
+
+async function loadStats() {
+  const data = await chrome.storage.local.get([STATS_STORAGE_KEY]);
+  return normalizeStats(data[STATS_STORAGE_KEY]);
+}
+
+async function renderStats() {
+  const stats = await loadStats();
+  const totalEl = document.getElementById("statsTotal");
+  const emptyEl = document.getElementById("statsEmpty");
+  const rowsEl = document.getElementById("statsRows");
+
+  if (totalEl) totalEl.textContent = String(stats.totalExecutions);
+  if (!rowsEl || !emptyEl) return;
+
+  const entries = Object.entries(stats.bySequence)
+    .map(([sequence, value]) => ({ sequence, ...value }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return String(b.lastUsedAt || "").localeCompare(String(a.lastUsedAt || ""));
+    })
+    .slice(0, STATS_TABLE_LIMIT);
+
+  rowsEl.innerHTML = "";
+  if (!entries.length) {
+    emptyEl.hidden = false;
+    return;
+  }
+
+  emptyEl.hidden = true;
+  for (const entry of entries) {
+    const tr = document.createElement("tr");
+
+    const seqTd = document.createElement("td");
+    seqTd.className = "stats-seq";
+    seqTd.textContent = formatSequenceForDisplay(entry.sequence);
+
+    const labelTd = document.createElement("td");
+    labelTd.textContent = getStatsEntryLabel(entry.sequence, entry);
+
+    const countTd = document.createElement("td");
+    countTd.textContent = String(entry.count);
+
+    const lastTd = document.createElement("td");
+    lastTd.textContent = formatLastUsed(entry.lastUsedAt);
+
+    tr.append(seqTd, labelTd, countTd, lastTd);
+    rowsEl.appendChild(tr);
+  }
+}
+
+async function resetStats() {
+  await chrome.storage.local.set({ [STATS_STORAGE_KEY]: emptyStats() });
+  await renderStats();
+  flashStatus("Stats reset ✓", 1400);
+}
+
+async function setSettingsTab(nextTabId) {
+  const tabId = nextTabId === "stats" ? "stats" : "mappings";
+  activeSettingsTab = tabId;
+
+  const mappingsBtn = document.getElementById("tabMappings");
+  const statsBtn = document.getElementById("tabStats");
+  const mappingsPanel = document.getElementById("panelMappings");
+  const statsPanel = document.getElementById("panelStats");
+  const showStats = tabId === "stats";
+
+  mappingsBtn?.classList.toggle("is-active", !showStats);
+  statsBtn?.classList.toggle("is-active", showStats);
+  if (mappingsPanel) mappingsPanel.hidden = showStats;
+  if (statsPanel) statsPanel.hidden = !showStats;
+
+  if (showStats) {
+    await renderStats();
+  }
+}
+
 function emptyPreset() {
   const urls = {};
   for (const dir of DIRECTIONS) {
@@ -100,6 +249,7 @@ function emptyPreset() {
 
   return {
     urls,
+    commands: {},
     names: {},
     openInNewTabByKey: {},
     comboWindowMs: DEFAULT_COMBO_WINDOW_MS
@@ -107,12 +257,13 @@ function emptyPreset() {
 }
 
 function hasPresetData(preset) {
-  return Object.values(preset.urls || {}).some(Boolean);
+  return Object.values(preset.urls || {}).some(Boolean) || Object.values(preset.commands || {}).some(Boolean);
 }
 
 function normalizePreset(rawPreset) {
   const base = emptyPreset();
   const urls = rawPreset?.urls || {};
+  const commands = rawPreset?.commands || {};
   const names = rawPreset?.names || {};
   const openInNewTabByKey = rawPreset?.openInNewTabByKey || {};
 
@@ -123,10 +274,18 @@ function normalizePreset(rawPreset) {
     base.urls[sequence] = target;
   }
 
+  for (const [rawSequence, rawCommand] of Object.entries(commands)) {
+    const sequence = normalizeSequence(rawSequence);
+    const command = String(rawCommand || "").trim();
+    if (!sequence || !COMMAND_IDS.has(command)) continue;
+    base.commands[sequence] = command;
+  }
+
   for (const [rawSequence, rawName] of Object.entries(names)) {
     const sequence = normalizeSequence(rawSequence);
     const nickname = normalizeNickname(rawName);
-    if (!sequence || !nickname || !base.urls[sequence]) continue;
+    const hasAction = Boolean(base.urls[sequence] || base.commands[sequence]);
+    if (!sequence || !nickname || !hasAction) continue;
     base.names[sequence] = nickname;
   }
 
@@ -143,6 +302,7 @@ function normalizePreset(rawPreset) {
 function buildLegacyPreset(data) {
   return normalizePreset({
     urls: data.ddrNavUrls || {},
+    commands: data.ddrNavCommands || {},
     names: data.ddrNavNames || {},
     openInNewTabByKey: data.ddrNavOpenInNewTab || {},
     comboWindowMs: data.ddrNavSettings?.comboWindowMs
@@ -179,12 +339,41 @@ function ensurePresetState(data) {
   };
 }
 
-function createComboRow(sequence = "", url = "", nickname = "", openInNewTab = false) {
+function commandOptionsHtml() {
+  return COMMAND_OPTIONS.map((command) => `<option value="${command.id}">${command.label}</option>`).join("");
+}
+
+function syncComboRowActionUI(row) {
+  const actionSelect = row.querySelector(".combo-action");
+  const actionType = actionSelect?.value || ACTION_TYPES.URL;
+  const urlInput = row.querySelector(".combo-url");
+  const commandSelect = row.querySelector(".combo-command");
+  const newTabLabel = row.querySelector(".combo-toggle");
+
+  const isUrlAction = actionType === ACTION_TYPES.URL;
+  if (urlInput) urlInput.hidden = !isUrlAction;
+  if (commandSelect) commandSelect.hidden = isUrlAction;
+  if (newTabLabel) newTabLabel.hidden = !isUrlAction;
+}
+
+function createComboRow({
+  sequence = "",
+  actionType = ACTION_TYPES.URL,
+  url = "",
+  command = COMMAND_OPTIONS[0].id,
+  nickname = "",
+  openInNewTab = false
+} = {}) {
   const row = document.createElement("div");
   row.className = "combo-row";
   row.innerHTML = `
     <input class="combo-seq" type="text" placeholder="left,left" />
+    <select class="combo-action">
+      <option value="${ACTION_TYPES.URL}">URL</option>
+      <option value="${ACTION_TYPES.COMMAND}">Command</option>
+    </select>
     <input class="combo-url" type="text" placeholder="https://example.com" />
+    <select class="combo-command">${commandOptionsHtml()}</select>
     <input class="combo-name" type="text" placeholder="Nickname (optional)" />
     <label class="combo-toggle">
       <input class="combo-newtab" type="checkbox" />
@@ -194,10 +383,17 @@ function createComboRow(sequence = "", url = "", nickname = "", openInNewTab = f
   `;
 
   row.querySelector(".combo-seq").value = sequence;
+  row.querySelector(".combo-action").value =
+    actionType === ACTION_TYPES.COMMAND ? ACTION_TYPES.COMMAND : ACTION_TYPES.URL;
   row.querySelector(".combo-url").value = url;
+  row.querySelector(".combo-command").value = COMMAND_IDS.has(command) ? command : COMMAND_OPTIONS[0].id;
   row.querySelector(".combo-name").value = nickname;
   row.querySelector(".combo-newtab").checked = openInNewTab;
+  row.querySelector(".combo-action").addEventListener("change", () => {
+    syncComboRowActionUI(row);
+  });
   row.querySelector(".combo-remove").addEventListener("click", () => row.remove());
+  syncComboRowActionUI(row);
 
   return row;
 }
@@ -225,20 +421,26 @@ function loadPresetIntoForm(preset) {
     document.getElementById(`${dir}-newtab`).checked = Boolean(preset.openInNewTabByKey[dir] && target);
   }
 
-  const comboKeys = Object.keys(preset.urls)
-    .filter((sequence) => !DIRECTIONS.includes(sequence))
-    .sort();
+  const comboKeySet = new Set([
+    ...Object.keys(preset.urls || {}),
+    ...Object.keys(preset.commands || {})
+  ]);
+  const comboKeys = [...comboKeySet].filter((sequence) => !DIRECTIONS.includes(sequence)).sort();
 
   for (const sequence of comboKeys) {
-    const target = preset.urls[sequence] || "";
-    if (!target) continue;
+    const url = preset.urls[sequence] || "";
+    const command = preset.commands?.[sequence] || "";
+    const isCommand = Boolean(command);
+    if (!url && !isCommand) continue;
     combosList.appendChild(
-      createComboRow(
+      createComboRow({
         sequence,
-        target,
-        preset.names[sequence] || "",
-        Boolean(preset.openInNewTabByKey[sequence])
-      )
+        actionType: isCommand ? ACTION_TYPES.COMMAND : ACTION_TYPES.URL,
+        url,
+        command: command || COMMAND_OPTIONS[0].id,
+        nickname: preset.names[sequence] || "",
+        openInNewTab: Boolean(!isCommand && preset.openInNewTabByKey[sequence])
+      })
     );
   }
 
@@ -247,6 +449,7 @@ function loadPresetIntoForm(preset) {
 
 function collectPresetFromForm({ markInvalid = true } = {}) {
   const urls = {};
+  const commands = {};
   const names = {};
   const openInNewTabByKey = {};
   let invalidComboCount = 0;
@@ -264,34 +467,49 @@ function collectPresetFromForm({ markInvalid = true } = {}) {
   const rows = document.querySelectorAll(".combo-row");
   for (const row of rows) {
     const sequenceInput = row.querySelector(".combo-seq");
+    const actionInput = row.querySelector(".combo-action");
     const urlInput = row.querySelector(".combo-url");
+    const commandInput = row.querySelector(".combo-command");
     const nameInput = row.querySelector(".combo-name");
     const newTabInput = row.querySelector(".combo-newtab");
     const rawSequence = sequenceInput.value;
+    const rawUrl = urlInput.value;
+    const rawName = nameInput.value;
     const sequence = normalizeSequence(rawSequence);
-    const target = normalizeUrl(urlInput.value);
-    const nickname = normalizeNickname(nameInput.value);
+    const actionType = actionInput?.value === ACTION_TYPES.COMMAND ? ACTION_TYPES.COMMAND : ACTION_TYPES.URL;
+    const target = normalizeUrl(rawUrl);
+    const command = COMMAND_IDS.has(String(commandInput?.value || "")) ? String(commandInput.value) : "";
+    const nickname = normalizeNickname(rawName);
     const openInNewTab = Boolean(newTabInput?.checked);
+    const hasPayload = actionType === ACTION_TYPES.COMMAND ? Boolean(command) : Boolean(target);
+    const isUntouchedRow = !rawSequence.trim() && !rawUrl.trim() && !rawName.trim();
 
     if (markInvalid) sequenceInput.classList.remove("invalid");
 
-    if (!rawSequence.trim() && !target) continue;
+    if (isUntouchedRow) continue;
+    if (!rawSequence.trim() && !hasPayload) continue;
     if (!sequence) {
       invalidComboCount += 1;
       if (markInvalid) sequenceInput.classList.add("invalid");
       continue;
     }
-    if (!target) continue;
+    if (!hasPayload) continue;
     if (DIRECTIONS.includes(sequence)) continue;
 
-    urls[sequence] = target;
+    if (actionType === ACTION_TYPES.COMMAND) {
+      commands[sequence] = command;
+    } else {
+      urls[sequence] = target;
+      if (openInNewTab) openInNewTabByKey[sequence] = true;
+    }
+
     if (nickname) names[sequence] = nickname;
-    if (openInNewTab) openInNewTabByKey[sequence] = true;
   }
 
   return {
     preset: normalizePreset({
       urls,
+      commands,
       names,
       openInNewTabByKey,
       comboWindowMs: parseComboWindowSeconds(document.getElementById("comboWindowSeconds").value)
@@ -309,6 +527,7 @@ async function persistPresetState() {
       presets: presetState.presets
     },
     ddrNavUrls: activePreset.urls,
+    ddrNavCommands: activePreset.commands,
     ddrNavNames: activePreset.names,
     ddrNavOpenInNewTab: activePreset.openInNewTabByKey,
     ddrNavSettings: {
@@ -379,6 +598,7 @@ async function importSettingsFromFile(file) {
 async function load() {
   const data = await chrome.storage.sync.get([
     "ddrNavUrls",
+    "ddrNavCommands",
     "ddrNavNames",
     "ddrNavOpenInNewTab",
     "ddrNavSettings",
@@ -389,6 +609,7 @@ async function load() {
   activePresetId = presetState.activePresetId;
   renderPresetSelect();
   loadPresetIntoForm(getActivePreset());
+  await setSettingsTab(activeSettingsTab);
 
   // Ensure migrated/new preset data is persisted.
   await persistPresetState();
@@ -424,8 +645,21 @@ async function save() {
 document.getElementById("presetSelect").addEventListener("change", (event) => {
   void onPresetChange(event.target.value);
 });
+document.querySelectorAll(".tab-btn").forEach((button) => {
+  button.addEventListener("click", () => {
+    void setSettingsTab(button.dataset.tab);
+  });
+});
 document.getElementById("addCombo").addEventListener("click", () => {
   document.getElementById("combosList").appendChild(createComboRow());
+});
+document.getElementById("refreshStats").addEventListener("click", () => {
+  void renderStats();
+});
+document.getElementById("resetStats").addEventListener("click", () => {
+  const confirmed = window.confirm("Are you sure? This will reset your stats.");
+  if (!confirmed) return;
+  void resetStats();
 });
 document.getElementById("exportSettings").addEventListener("click", () => {
   exportSettingsJson();
@@ -445,5 +679,10 @@ document.getElementById("importFile").addEventListener("change", (event) => {
 });
 document.getElementById("save").addEventListener("click", () => {
   void save();
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[STATS_STORAGE_KEY] && activeSettingsTab === "stats") {
+    void renderStats();
+  }
 });
 void load();
