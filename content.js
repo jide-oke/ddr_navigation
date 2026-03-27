@@ -27,6 +27,12 @@
   const STATS_STORAGE_KEY = "ddrNavStats";
   const PREFIX_GRADIENT_RAINBOW = "linear-gradient(90deg, rgba(87,180,255,0.98) 0%, rgba(121,131,255,0.98) 18%, rgba(196,108,255,0.98) 36%, rgba(255,112,196,0.98) 54%, rgba(255,164,96,0.98) 72%, rgba(255,220,115,0.98) 86%, rgba(126,242,172,0.98) 100%)";
   const PREFIX_GRADIENT_GREEN_TO_RED = "linear-gradient(90deg, rgba(105,255,198,0.98) 0%, rgba(154,255,124,0.98) 28%, rgba(255,228,112,0.98) 58%, rgba(255,168,102,0.98) 78%, rgba(255,92,92,0.98) 100%)";
+  const MARVELOUS_PREFIX_FRAMES = [
+    "MARVELOUS!!!!! (˶˃ ᵕ ˂˶)",
+    "MARVELOUS!!!!! (˶˃ ᵕ ˂˶)",
+    "MARVELOUS!!!!! (˶˘ ᵕ ˘˶)",
+    "MARVELOUS!!!!! (˶˃ ᵕ ˂˶)"
+  ];
 
   // ---------- Overlay ----------
   const overlay = document.createElement("div");
@@ -241,6 +247,7 @@
   let prefixes = new Set();
   const shownChoices = Object.fromEntries(DIRECTIONS.map((dir) => [dir, ""]));
   let comboWindowRafId = null;
+  let prefixFrameIntervalId = null;
 
   function normalizeComboWindowMs(value) {
     const n = Number(value);
@@ -478,7 +485,7 @@
   const state = {
     meta: false,
     shift: false,
-    y: false,
+    dot: false,
     sequence: [],
     sequenceTimer: null,
     navigating: false,
@@ -486,7 +493,7 @@
   };
 
   function comboHeld() {
-    return state.meta && state.shift && state.y;
+    return state.meta && state.shift && state.dot;
   }
 
   function modifiersHeld() {
@@ -609,11 +616,33 @@
         prefixGradient: PREFIX_GRADIENT_RAINBOW
       };
     }
-    if (length >= 3) {
+    if (length === 3) {
       return {
         prefix: "Great!!! ⋆˙⟡ ♡",
         prefixCycles: 10,
         prefixGradient: PREFIX_GRADIENT_GREEN_TO_RED
+      };
+    }
+    if (length === 4) {
+      return {
+        prefix: "AMAZING!!!! (⸝⸝> ᴗ•⸝⸝)",
+        prefixCycles: 15,
+        prefixGradient: PREFIX_GRADIENT_RAINBOW
+      };
+    }
+    if (length === 5) {
+      return {
+        prefix: "MARVELOUS!!!!! (˶˃ ᵕ ˂˶)",
+        prefixCycles: 20,
+        prefixGradient: PREFIX_GRADIENT_RAINBOW,
+        prefixFrames: MARVELOUS_PREFIX_FRAMES
+      };
+    }
+    if (length >= 6) {
+      return {
+        prefix: "Seriously???!! ( ˶°ㅁ°)!!",
+        prefixCycles: 30,
+        prefixGradient: PREFIX_GRADIENT_RAINBOW
       };
     }
     return {
@@ -633,12 +662,31 @@
       setCurrentChoiceLabel("");
       return;
     }
-    const { prefix, prefixCycles, prefixGradient } = getLoadingPrefixSettings(sequenceKey);
-    setCurrentChoiceLabel(`${prefix}: ${label}`, { loading: true, prefix, prefixCycles, prefixGradient });
+    const { prefix, prefixCycles, prefixGradient, prefixFrames } = getLoadingPrefixSettings(sequenceKey);
+    setCurrentChoiceLabel(`${prefix}: ${label}`, { loading: true, prefix, prefixCycles, prefixGradient, prefixFrames });
+  }
+
+  function stopPrefixFrameAnimation() {
+    if (prefixFrameIntervalId) {
+      clearInterval(prefixFrameIntervalId);
+      prefixFrameIntervalId = null;
+    }
+  }
+
+  function startPrefixFrameAnimation(prefixEl, frames) {
+    stopPrefixFrameAnimation();
+    if (!prefixEl || !Array.isArray(frames) || frames.length < 2) return;
+    let frameIndex = 0;
+    prefixEl.textContent = `${frames[frameIndex]}:`;
+    prefixFrameIntervalId = setInterval(() => {
+      frameIndex = (frameIndex + 1) % frames.length;
+      prefixEl.textContent = `${frames[frameIndex]}:`;
+    }, 110);
   }
 
   function setCurrentChoiceLabel(text, options = {}) {
     if (!currentChoiceEl) return;
+    stopPrefixFrameAnimation();
     const value = String(text || "").trim();
     const loading = Boolean(options.loading);
     currentChoiceEl.textContent = "";
@@ -646,6 +694,7 @@
       const prefix = String(options.prefix || "Nice!! ♡").trim() || "Nice!! ♡";
       const prefixCycles = Math.max(1, Number(options.prefixCycles) || 2);
       const prefixGradient = String(options.prefixGradient || PREFIX_GRADIENT_RAINBOW);
+      const prefixFrames = Array.isArray(options.prefixFrames) ? options.prefixFrames.filter(Boolean).map((frame) => String(frame)) : [];
       const colonIndex = value.indexOf(":");
       const suffix = colonIndex >= 0 ? value.slice(colonIndex + 1).trim() : value;
       const prefixEl = document.createElement("span");
@@ -657,6 +706,7 @@
       currentChoiceEl.style.setProperty("--ddr-prefix-cycle-count", String(prefixCycles));
       currentChoiceEl.style.setProperty("--ddr-prefix-gradient", prefixGradient);
       currentChoiceEl.append(prefixEl, valueEl);
+      startPrefixFrameAnimation(prefixEl, prefixFrames);
     } else {
       currentChoiceEl.textContent = value;
       currentChoiceEl.style.setProperty("--ddr-prefix-cycle-count", "2");
@@ -800,7 +850,7 @@
     clearNavigationTimer();
     state.meta = false;
     state.shift = false;
-    state.y = false;
+    state.dot = false;
     state.navigating = false;
     clearSequence();
     hide();
@@ -826,9 +876,9 @@
 
       state.meta = e.metaKey;
       state.shift = e.shiftKey;
-      if (!modifiersHeld()) state.y = false;
-      if (e.key && e.key.toLowerCase() === "y") {
-        state.y = true;
+      if (!modifiersHeld()) state.dot = false;
+      if (e.code === "Period") {
+        state.dot = true;
       }
 
       if (comboHeld()) {
@@ -862,8 +912,8 @@
     (e) => {
       state.meta = e.metaKey;
       state.shift = e.shiftKey;
-      if (e.key && e.key.toLowerCase() === "y") state.y = false;
-      if (!modifiersHeld()) state.y = false;
+      if (e.code === "Period") state.dot = false;
+      if (!modifiersHeld()) state.dot = false;
 
       if (!modifiersHeld()) {
         finalizeSequence();

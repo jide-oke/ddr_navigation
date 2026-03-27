@@ -35,7 +35,7 @@ Hold a key combo, tap arrow directions (including multi-step combos), and jump t
 
 ## Usage
 
-1. Hold `Cmd + Shift + Y` (Mac).
+1. Hold `Cmd + Shift + .` (Mac).
 2. Press arrow keys to select a shortcut path.
 3. Use combo chaining during the timing window.
 4. Press `Escape` any time to cancel DDR navigation.
