@@ -828,11 +828,6 @@
     const exactEntry = bindings.get(sequenceKey);
     const hasLongerMatch = prefixes.has(sequenceKey);
 
-    if (isActionableEntry(exactEntry) && !hasLongerMatch) {
-      activate(sequenceKey, dir, exactEntry);
-      return;
-    }
-
     setActiveReceptor(dir);
     renderChoices(state.sequence, true);
     renderCurrentSequenceChoice();
